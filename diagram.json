@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "author": "LEDCon — Gledopto Elite 2D-EXMU Simulation",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-v1", "id": "esp", "top": -50.72, "left": -158.4, "attrs": {} },
+    {
+      "type": "wokwi-led-strip",
+      "id": "strip1",
+      "top": 44,
+      "left": -19.2,
+      "attrs": { "pixels": "20", "pixelSize": "3535" }
+    }
+  ],
+  "connections": [
+    [ "strip1:DIN", "esp:D4", "blue", [ "h0" ] ],
+    [ "strip1:VSS", "esp:GND.1", "black", [ "h0" ] ],
+    [ "strip1:VDD", "esp:3V3", "red", [ "h0" ] ]
+  ],
+  "serialMonitor": { "display": "terminal", "newline": "lf", "baudRate": 115200 },
+  "dependencies": {}
+}

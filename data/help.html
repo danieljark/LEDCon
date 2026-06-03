@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEDCon — Hilfe</title>
+<style>
+  :root{--bg:#111;--card:#1e1e1e;--border:#333;--accent:#4fc3f7;--text:#eee;--sub:#888;--green:#81c784;--orange:#ffb74d}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:700px}
+  h1{font-size:1.3rem;color:var(--accent);margin-bottom:4px}
+  nav a{color:var(--sub);text-decoration:none;margin-right:16px;font-size:.85rem}
+  nav a:hover{color:var(--accent)}
+  nav a.active{color:var(--accent)}
+  .tabs{display:flex;gap:0;margin-top:16px;border-bottom:2px solid var(--border)}
+  .tab{padding:8px 18px;cursor:pointer;font-size:.9rem;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-2px}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .panel{display:none;margin-top:16px}
+  .panel.active{display:block}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+  h2{font-size:1rem;color:var(--accent);margin-bottom:10px}
+  h3{font-size:.9rem;color:var(--orange);margin:14px 0 6px}
+  p,li{font-size:.85rem;color:var(--sub);line-height:1.6}
+  ul{padding-left:18px;margin-bottom:8px}
+  code{background:#2a2a2a;padding:2px 6px;border-radius:3px;font-family:monospace;font-size:.85rem;color:var(--green)}
+  pre{background:#2a2a2a;padding:12px;border-radius:6px;overflow-x:auto;font-size:.8rem;color:var(--green);margin:8px 0}
+  table{width:100%;border-collapse:collapse;font-size:.8rem;margin:8px 0}
+  th{text-align:left;padding:6px 8px;background:#2a2a2a;color:var(--accent);border-bottom:1px solid var(--border)}
+  td{padding:5px 8px;border-bottom:1px solid #222;color:var(--sub)}
+  td:first-child{color:var(--text);font-family:monospace}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600}
+  .get{background:#1a3a1a;color:var(--green)}.post{background:#1a2a3a;color:var(--accent)}
+</style>
+</head>
+<body>
+<h1>⚡ LEDCon</h1>
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/net.html">Netzwerk</a>
+  <a href="/leds.html">LED Setup</a>
+  <a href="/settings.html">Einstellungen</a>
+  <a href="/help.html" class="active">Hilfe</a>
+</nav>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('modbus')">Modbus TCP</div>
+  <div class="tab" onclick="show('webapi')">Web API</div>
+  <div class="tab" onclick="show('artnet')">Art-Net</div>
+  <div class="tab" onclick="show('ota')">OTA Update</div>
+</div>
+
+<!-- ═══ MODBUS TCP ════════════════════════════════════════════════════════ -->
+<div id="p-modbus" class="panel active">
+  <div class="card">
+    <h2>Modbus TCP — Verbindungseinstellungen</h2>
+    <table>
+      <tr><th>Parameter</th><th>Wert</th></tr>
+      <tr><td>IP-Adresse</td><td>192.168.10.10 (ETH) / 192.168.10.1 (AP)</td></tr>
+      <tr><td>Port</td><td>502</td></tr>
+      <tr><td>Unit-ID / Slave-ID</td><td>1</td></tr>
+      <tr><td>Protokoll</td><td>Modbus TCP (nicht RTU)</td></tr>
+      <tr><td>Timeout</td><td>10 s</td></tr>
+      <tr><td>Max. gleichzeitige Verbindungen</td><td>4</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Unterstützte Function Codes</h2>
+    <table>
+      <tr><th>FC</th><th>Name</th><th>Beschreibung</th></tr>
+      <tr><td>03</td><td>Read Holding Registers</td><td>Register lesen (max. 125)</td></tr>
+      <tr><td>06</td><td>Write Single Register</td><td>Einzelnes Register schreiben</td></tr>
+      <tr><td>16 (0x10)</td><td>Write Multiple Registers</td><td>Mehrere Register schreiben (max. 64)</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Register-Tabelle</h2>
+    <h3>Global</h3>
+    <table>
+      <tr><th>Register</th><th>Name</th><th>Wertebereich</th><th>R/W</th></tr>
+      <tr><td>0</td><td>Global Enable</td><td>0 = AUS, 1 = EIN</td><td>R/W</td></tr>
+      <tr><td>1</td><td>Global Helligkeit</td><td>0–255</td><td>R/W</td></tr>
+      <tr><td>2</td><td>Anzahl Segmente</td><td>1–8</td><td>R</td></tr>
+    </table>
+    <h3>Segmente (n = 0–7)</h3>
+    <p style="margin-bottom:8px">Basis-Adresse: <code>10 + n × 10</code> — jedes Segment belegt 6 Register (Offset +0 bis +5).</p>
+    <table>
+      <tr><th>Segment</th><th>Reg +0 (R)</th><th>Reg +1 (G)</th><th>Reg +2 (B)</th><th>Reg +3 (Bri)</th><th>Reg +4 (Fx)</th><th>Reg +5 (En)</th></tr>
+      <tr><td>Seg 0</td><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td></tr>
+      <tr><td>Seg 1</td><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td><td>25</td></tr>
+      <tr><td>Seg 2</td><td>30</td><td>31</td><td>32</td><td>33</td><td>34</td><td>35</td></tr>
+      <tr><td>Seg 3</td><td>40</td><td>41</td><td>42</td><td>43</td><td>44</td><td>45</td></tr>
+      <tr><td>Seg 4</td><td>50</td><td>51</td><td>52</td><td>53</td><td>54</td><td>55</td></tr>
+      <tr><td>Seg 5</td><td>60</td><td>61</td><td>62</td><td>63</td><td>64</td><td>65</td></tr>
+      <tr><td>Seg 6</td><td>70</td><td>71</td><td>72</td><td>73</td><td>74</td><td>75</td></tr>
+      <tr><td>Seg 7</td><td>80</td><td>81</td><td>82</td><td>83</td><td>84</td><td>85</td></tr>
+    </table>
+    <h3>Register-Beschreibung (pro Segment)</h3>
+    <table>
+      <tr><th>Offset</th><th>Name</th><th>Wertebereich</th><th>R/W</th></tr>
+      <tr><td>+0</td><td>Rot (R)</td><td>0–255</td><td>R/W</td></tr>
+      <tr><td>+1</td><td>Grün (G)</td><td>0–255</td><td>R/W</td></tr>
+      <tr><td>+2</td><td>Blau (B)</td><td>0–255</td><td>R/W</td></tr>
+      <tr><td>+3</td><td>Helligkeit (Bri)</td><td>0–255</td><td>R/W</td></tr>
+      <tr><td>+4</td><td>Effekt (Fx)</td><td>0=Aus, 1=Static, 2=Flash 4Hz, 3=Flash 0.5Hz, 4=Pulse 2Hz, 5=Pulse 0.33Hz, 6=Strobe 20Hz, 7=Pulse 1Hz, 8=Chase</td><td>R/W</td></tr>
+      <tr><td>+5</td><td>Aktiviert (En)</td><td>0 = AUS, 1 = EIN</td><td>R/W</td></tr>
+    </table>
+    <h3>Beispiel: Segment 0 auf Rot static</h3>
+    <pre>FC16  Addr=10  Count=6  Data: 255, 0, 0, 200, 1, 1
+→ R=255, G=0, B=0, Bri=200, Fx=Static, En=1</pre>
+    <h3>Beispiel: Alle LEDs aus</h3>
+    <pre>FC06  Addr=0  Value=0   (GlobalEnable = 0)</pre>
+  </div>
+</div>
+
+<!-- ═══ WEB API ═══════════════════════════════════════════════════════════ -->
+<div id="p-webapi" class="panel">
+  <div class="card">
+    <h2>Web API — Verbindung</h2>
+    <table>
+      <tr><th>Parameter</th><th>Wert</th></tr>
+      <tr><td>Base URL</td><td>http://192.168.10.10</td></tr>
+      <tr><td>Port</td><td>80</td></tr>
+      <tr><td>Content-Type</td><td>application/json</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Endpunkte</h2>
+    <h3><span class="badge get">GET</span> /api/status</h3>
+    <p>Aktuellen Status abfragen</p>
+    <pre>{"ip":"192.168.10.10","uptime":123,"heap":229000,
+ "segs":4,"globalEn":true,"globalBri":255,"relay":true}</pre>
+    <h3><span class="badge post">POST</span> /api/seg?n=0</h3>
+    <p>Segment n steuern (Alarmanzeige-Modus)</p>
+    <pre>{"r":255,"g":0,"b":0,"bri":200,"fx":1,"en":true}
+Felder optional — nur übermittelte werden geändert
+fx: 0=Aus 1=Static 2=Flash4Hz 3=Flash0.5Hz 4=Pulse2Hz
+    5=Pulse0.33Hz 6=Strobe 7=Pulse1Hz 8=Chase</pre>
+    <h3><span class="badge post">POST</span> /api/global</h3>
+    <pre>{"en":true,"bri":200}</pre>
+    <h3><span class="badge post">POST</span> /api/relay</h3>
+    <pre>{"on":true}</pre>
+    <h3><span class="badge get">GET</span> /api/cfg</h3>
+    <p>Komplette Konfiguration lesen</p>
+    <h3><span class="badge post">POST</span> /api/net</h3>
+    <p>Netzwerk-Konfiguration speichern (löst Neustart aus)</p>
+    <pre>{"dhcp":false,"ip":"192.168.10.10","mask":"255.255.255.0",
+ "gw":"192.168.10.1","ssid":"","pass":"","ap":"LEDcon",
+ "apEn":true,"mbport":502}</pre>
+  </div>
+</div>
+
+<!-- ═══ ART-NET ═══════════════════════════════════════════════════════════ -->
+<div id="p-artnet" class="panel">
+  <div class="card">
+    <h2>Art-Net — Verbindungseinstellungen</h2>
+    <table>
+      <tr><th>Parameter</th><th>Wert</th></tr>
+      <tr><td>IP-Adresse</td><td>192.168.10.10 (ETH) / 192.168.10.1 (AP)</td></tr>
+      <tr><td>UDP-Port</td><td>6454</td></tr>
+      <tr><td>Protokoll</td><td>Art-Net 4 (OpDmx)</td></tr>
+      <tr><td>Universe</td><td>Konfigurierbar (Standard: 0)</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Kanal-Mapping</h2>
+    <p>Jede Pixelgruppe belegt <strong>4 DMX-Kanäle</strong>: R, G, B, Master-Dimmer. Die finale Farbe = RGB × (Dimmer ÷ 255). Gruppen-Größe = Anzahl LEDs pro Gruppe (konfigurierbar).</p>
+    <h3>Kanal-Belegung pro Gruppe</h3>
+    <table>
+      <tr><th>Offset</th><th>Funktion</th><th>Wertebereich</th></tr>
+      <tr><td>+0</td><td>Rot (R)</td><td>0–255</td></tr>
+      <tr><td>+1</td><td>Grün (G)</td><td>0–255</td></tr>
+      <tr><td>+2</td><td>Blau (B)</td><td>0–255</td></tr>
+      <tr><td>+3</td><td>Master-Dimmer</td><td>0 = aus, 255 = volle Helligkeit</td></tr>
+    </table>
+    <h3>Beispiel: 50 LEDs, Gruppen-Größe = 3</h3>
+    <table>
+      <tr><th>Gruppe</th><th>DMX-Kanäle</th><th>LEDs</th></tr>
+      <tr><td>0</td><td>1–4 (R,G,B,Dim)</td><td>0–2</td></tr>
+      <tr><td>1</td><td>5–8 (R,G,B,Dim)</td><td>3–5</td></tr>
+      <tr><td>2</td><td>9–12 (R,G,B,Dim)</td><td>6–8</td></tr>
+      <tr><td>…</td><td>…</td><td>…</td></tr>
+      <tr><td>15</td><td>61–64 (R,G,B,Dim)</td><td>45–47</td></tr>
+    </table>
+    <h3>Konfiguration im Steuer-Programm</h3>
+    <ul>
+      <li>Universe: wie in LEDCon konfiguriert (Standard: 0)</li>
+      <li>Start-Kanal: 1 (Art-Net zählt ab 1)</li>
+      <li>Anzahl Kanäle: Gruppen × 3</li>
+      <li>Patch-Typ: RGB oder Generic</li>
+    </ul>
+    <h3>Kompatible Software</h3>
+    <ul>
+      <li>QLC+ (Open Lighting Architecture)</li>
+      <li>MA Lighting grandMA</li>
+      <li>Resolume Avenue / Arena</li>
+      <li>MadMapper, TouchDesigner, Capture</li>
+      <li>Node-RED mit artnet-Nodes</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══ OTA ═══════════════════════════════════════════════════════════════ -->
+<div id="p-ota" class="panel">
+  <div class="card">
+    <h2>OTA Firmware-Update</h2>
+    <p style="margin-bottom:12px">Neue Firmware (.bin) direkt über den Browser hochladen. Das Board startet nach dem Update automatisch neu.</p>
+    <input type="file" id="fw-file" accept=".bin" style="color:var(--text);margin-bottom:12px;display:block">
+    <button onclick="doUpdate()" style="background:var(--accent);color:#000;border:none;border-radius:6px;padding:10px 24px;font-size:.95rem;font-weight:600;cursor:pointer">Firmware hochladen</button>
+    <div id="ota-msg" style="margin-top:12px;font-size:.85rem;min-height:20px"></div>
+    <div id="ota-bar" style="display:none;margin-top:8px;background:#2a2a2a;border-radius:4px;height:8px">
+      <div id="ota-progress" style="background:var(--accent);height:8px;border-radius:4px;width:0%;transition:width .3s"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Hinweise</h2>
+    <ul>
+      <li>Firmware-Datei: <code>firmware.bin</code> aus dem PlatformIO-Build-Ordner</li>
+      <li>Pfad: <code>.pio/build/ledcon_hw/firmware.bin</code></li>
+      <li>Während des Updates keine Verbindung trennen</li>
+      <li>Das Board neustartet automatisch nach erfolgreichem Update</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+function show(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['modbus','webapi','artnet','ota'][i]===id));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p-'+id).classList.add('active');
+}
+
+async function doUpdate(){
+  const file = document.getElementById('fw-file').files[0];
+  if(!file){document.getElementById('ota-msg').textContent='Bitte Datei auswählen';return;}
+  const msg=document.getElementById('ota-msg');
+  const bar=document.getElementById('ota-bar');
+  const prog=document.getElementById('ota-progress');
+  msg.textContent='Uploading…';
+  bar.style.display='block';
+  const form=new FormData();
+  form.append('firmware',file,file.name);
+  const xhr=new XMLHttpRequest();
+  xhr.upload.onprogress=e=>{if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100);prog.style.width=p+'%';msg.textContent='Uploading… '+p+'%';}};
+  xhr.onload=()=>{
+    const r=JSON.parse(xhr.responseText||'{}');
+    if(r.ok){msg.textContent='✓ Update erfolgreich — Board startet neu…';prog.style.width='100%';}
+    else{msg.textContent='✗ Fehler: '+(r.err||'unbekannt');}
+  };
+  xhr.onerror=()=>{msg.textContent='✗ Verbindungsfehler';};
+  xhr.open('POST','/update');
+  xhr.send(form);
+}
+</script>
+</body>
+</html>

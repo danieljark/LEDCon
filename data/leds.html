@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEDCon — LED Setup</title>
+<style>
+  :root{--bg:#111;--card:#1e1e1e;--border:#333;--accent:#4fc3f7;--text:#eee;--sub:#888}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:540px}
+  h1{font-size:1.3rem;color:var(--accent);margin-bottom:4px}
+  nav a{color:var(--sub);text-decoration:none;margin-right:16px;font-size:.85rem}
+  nav a:hover{color:var(--accent)}
+  nav a.active{color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:14px}
+  h2{font-size:.95rem;color:var(--accent);margin-bottom:12px}
+  label{display:block;font-size:.75rem;color:var(--sub);margin:8px 0 3px}
+  input[type=number],select{
+    width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
+    border-radius:4px;padding:6px 10px;font-size:.9rem}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .seg-row{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
+  .seg-row:last-child{border-bottom:none}
+  .seg-label{width:70px;font-size:.8rem;color:var(--sub);flex-shrink:0}
+  button{margin-top:16px;width:100%;background:var(--accent);color:#000;border:none;
+         border-radius:6px;padding:10px;font-size:.95rem;font-weight:600;cursor:pointer}
+  button:hover{opacity:.85}
+  #msg{margin-top:10px;font-size:.85rem;text-align:center;color:var(--accent);min-height:18px}
+</style>
+</head>
+<body>
+<h1>⚡ LEDCon</h1>
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/net.html">Netzwerk</a>
+  <a href="/leds.html" class="active">LED Setup</a>
+  <a href="/settings.html">Einstellungen</a>
+  <a href="/help.html">Hilfe</a>
+</nav>
+
+<div class="card">
+  <h2>LED-Streifen</h2>
+  <div class="row">
+    <div>
+      <label>Daten-Pin (GPIO)</label>
+      <input type="number" id="pin" value="16" min="0" max="39">
+    </div>
+    <div>
+      <label>Anzahl LEDs</label>
+      <input type="number" id="count" value="50" min="1" max="300">
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>LED-Typ</label>
+      <select id="type">
+        <option value="WS2812B">WS2812B</option>
+        <option value="SK6812">SK6812</option>
+        <option value="WS2811">WS2811</option>
+      </select>
+    </div>
+    <div>
+      <label>Farbformat</label>
+      <select id="order">
+        <option value="GRB">GRB</option>
+        <option value="RGB">RGB</option>
+        <option value="RGBW">RGBW</option>
+      </select>
+    </div>
+  </div>
+  <label>Max. Helligkeit (0–255)</label>
+  <input type="number" id="briMax" value="200" min="0" max="255">
+</div>
+
+<div class="card">
+  <h2>Segmente (Start / End LED, 0-basiert, inklusiv)</h2>
+  <div id="segs-list"></div>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button onclick="addSeg()" style="background:#2a2a2a;color:var(--text);border:1px solid var(--border)">+ Segment</button>
+    <button onclick="removeSeg()" style="background:#2a2a2a;color:var(--text);border:1px solid var(--border)">– Segment</button>
+  </div>
+</div>
+
+<button onclick="save()">Speichern &amp; Anwenden</button>
+<div id="msg"></div>
+
+<script>
+let segs=[];
+
+function renderSegs(){
+  const el=document.getElementById('segs-list');
+  el.innerHTML='';
+  segs.forEach((s,i)=>{
+    const row=document.createElement('div');
+    row.className='seg-row';
+    row.innerHTML=`
+      <span class="seg-label">Seg ${i}</span>
+      <div style="flex:1">
+        <label style="margin:0">Start</label>
+        <input type="number" id="ss-${i}" value="${s.s}" min="0" max="299" style="width:100%">
+      </div>
+      <div style="flex:1;margin-left:8px">
+        <label style="margin:0">Ende</label>
+        <input type="number" id="se-${i}" value="${s.e}" min="0" max="299" style="width:100%">
+      </div>`;
+    el.appendChild(row);
+  });
+}
+
+function addSeg(){
+  if(segs.length>=8)return;
+  const last=segs.length?segs[segs.length-1]:{s:0,e:-1};
+  segs.push({s:last.e+1,e:last.e+10});
+  renderSegs();
+}
+
+function removeSeg(){
+  if(segs.length<=1)return;
+  segs.pop();renderSegs();
+}
+
+function collectSegs(){
+  return segs.map((_,i)=>({
+    s:parseInt(document.getElementById('ss-'+i).value)||0,
+    e:parseInt(document.getElementById('se-'+i).value)||0
+  }));
+}
+
+async function loadCfg(){
+  try{
+    const d=await (await fetch('/api/cfg')).json();
+    if(d.strip){
+      document.getElementById('pin').value=d.strip.pin||16;
+      document.getElementById('count').value=d.strip.count||50;
+      document.getElementById('briMax').value=d.strip.briMax||200;
+      if(d.strip.type)document.getElementById('type').value=d.strip.type;
+      if(d.strip.order)document.getElementById('order').value=d.strip.order;
+    }
+    segs=(d.segs&&d.segs.length)?d.segs:[{s:0,e:11},{s:12,e:23},{s:24,e:36},{s:37,e:49}];
+    renderSegs();
+  }catch(e){
+    segs=[{s:0,e:11},{s:12,e:23},{s:24,e:36},{s:37,e:49}];
+    renderSegs();
+  }
+}
+
+async function save(){
+  const body={
+    strip:{
+      pin:parseInt(document.getElementById('pin').value),
+      count:parseInt(document.getElementById('count').value),
+      briMax:parseInt(document.getElementById('briMax').value),
+      type:document.getElementById('type').value,
+      order:document.getElementById('order').value
+    },
+    segs:collectSegs()
+  };
+  try{
+    await fetch('/api/leds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('msg').textContent='✓ Gespeichert und angewendet';
+  }catch(e){
+    document.getElementById('msg').textContent='Fehler beim Speichern';
+  }
+}
+
+loadCfg();
+</script>
+</body>
+</html>

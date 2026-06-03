@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEDCon — Einstellungen</title>
+<style>
+  :root{--bg:#111;--card:#1e1e1e;--border:#333;--accent:#4fc3f7;--text:#eee;--sub:#888}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:520px}
+  h1{font-size:1.3rem;color:var(--accent);margin-bottom:4px}
+  nav a{color:var(--sub);text-decoration:none;margin-right:16px;font-size:.85rem}
+  nav a:hover{color:var(--accent)}
+  nav a.active{color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:14px}
+  h2{font-size:.95rem;color:var(--accent);margin-bottom:12px}
+  label{display:block;font-size:.75rem;color:var(--sub);margin:10px 0 3px}
+  select,input[type=number]{width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
+    border-radius:4px;padding:7px 10px;font-size:.9rem}
+  .mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+  .mode-btn{padding:12px 6px;text-align:center;border:2px solid var(--border);border-radius:8px;
+    cursor:pointer;font-size:.85rem;color:var(--sub);transition:.15s}
+  .mode-btn.active{border-color:var(--accent);color:var(--accent);background:#0d2333}
+  .mode-btn .icon{font-size:1.4rem;display:block;margin-bottom:4px}
+  button{margin-top:16px;width:100%;background:var(--accent);color:#000;border:none;
+    border-radius:6px;padding:10px;font-size:.95rem;font-weight:600;cursor:pointer}
+  button:hover{opacity:.85}
+  #msg{margin-top:10px;font-size:.85rem;text-align:center;color:var(--accent);min-height:18px}
+  #artnet-cfg{display:none}
+  p.hint{font-size:.75rem;color:var(--sub);margin-top:6px}
+</style>
+</head>
+<body>
+<h1>⚡ LEDCon</h1>
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/net.html">Netzwerk</a>
+  <a href="/leds.html">LED Setup</a>
+  <a href="/settings.html" class="active">Einstellungen</a>
+  <a href="/help.html">Hilfe</a>
+</nav>
+
+<div class="card">
+  <h2>Steuerungs-Modus</h2>
+  <div class="mode-grid">
+    <div class="mode-btn" id="btn-0" onclick="setMode(0)">
+      <span class="icon">🌐</span>Web API<br><small style="color:#666">Alarmanzeige</small>
+    </div>
+    <div class="mode-btn" id="btn-1" onclick="setMode(1)">
+      <span class="icon">🎭</span>Art-Net<br><small style="color:#666">DMX/RGB</small>
+    </div>
+    <div class="mode-btn" id="btn-2" onclick="setMode(2)">
+      <span class="icon">🏭</span>Modbus TCP<br><small style="color:#666">Industrial</small>
+    </div>
+  </div>
+  <p class="hint">Nur ein Protokoll ist gleichzeitig aktiv. Änderung startet das Board neu.</p>
+</div>
+
+<div class="card" id="artnet-cfg">
+  <h2>Art-Net Konfiguration</h2>
+  <label>Universe (0–32767)</label>
+  <input type="number" id="an-univ" min="0" max="32767" value="0">
+  <label>Pixel-Gruppen-Größe (LEDs pro Gruppe)</label>
+  <input type="number" id="an-grp" min="1" max="50" value="3">
+  <p class="hint">Jede Gruppe belegt 4 DMX-Kanäle: R, G, B, Master-Dimmer. Kanal 1 = Gruppe 0 Rot.</p>
+</div>
+
+<button onclick="save()">Speichern &amp; Neustart</button>
+<div id="msg"></div>
+
+<script>
+let _mode = 2;
+
+function setMode(m){
+  _mode = m;
+  document.querySelectorAll('.mode-btn').forEach((b,i)=>b.classList.toggle('active',i===m));
+  document.getElementById('artnet-cfg').style.display = m===1?'block':'none';
+}
+
+async function loadCfg(){
+  try{
+    const d = await (await fetch('/api/mode')).json();
+    setMode(d.mode||2);
+    document.getElementById('an-univ').value = d.artnet?.univ||0;
+    document.getElementById('an-grp').value  = d.artnet?.grp||3;
+  }catch(e){}
+}
+
+async function save(){
+  const body = {
+    mode: _mode,
+    artnet: {
+      univ: parseInt(document.getElementById('an-univ').value)||0,
+      grp:  parseInt(document.getElementById('an-grp').value)||3
+    }
+  };
+  try{
+    await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('msg').textContent='✓ Gespeichert — Neustart läuft…';
+  }catch(e){
+    document.getElementById('msg').textContent='Fehler';
+  }
+}
+
+loadCfg();
+</script>
+</body>
+</html>

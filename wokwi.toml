@@ -1,0 +1,19 @@
+[wokwi]
+version = 1
+firmware = ".pio/build/ledcon_wokwi/firmware.bin"
+elf     = ".pio/build/ledcon_wokwi/firmware.elf"
+
+[[flash]]
+address = 0x290000
+file    = ".pio/build/ledcon_wokwi/littlefs.bin"
+
+[net]
+enabled = true
+
+[[net.forward]]
+host_port   = 8080
+device_port = 80
+
+[[net.forward]]
+host_port   = 5020
+device_port = 502

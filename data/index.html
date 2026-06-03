@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEDCon — Dashboard</title>
+<style>
+  :root{--bg:#111;--card:#1e1e1e;--border:#333;--accent:#4fc3f7;--text:#eee;--sub:#888}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:12px}
+  h1{font-size:1.4rem;color:var(--accent);margin-bottom:4px}
+  nav a{color:var(--sub);text-decoration:none;margin-right:16px;font-size:.85rem}
+  nav a:hover{color:var(--accent)}
+  nav a.active{color:var(--accent)}
+  #status{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;font-size:.8rem;color:var(--sub)}
+  #status span{background:var(--card);padding:4px 10px;border-radius:20px;border:1px solid var(--border)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:12px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+  h2{font-size:.95rem;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#333;flex-shrink:0}
+  label{display:block;font-size:.75rem;color:var(--sub);margin:8px 0 3px}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  input[type=color]{width:48px;height:32px;border:none;border-radius:4px;cursor:pointer;padding:0}
+  select{width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
+         border-radius:4px;padding:5px;font-size:.85rem}
+  .row{display:flex;gap:8px;align-items:center}
+  .toggle{position:relative;display:inline-block;width:38px;height:22px}
+  .toggle input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:#444;border-radius:22px;cursor:pointer;transition:.2s}
+  .slider:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;
+                 background:#fff;border-radius:50%;transition:.2s}
+  input:checked+.slider{background:var(--accent)}
+  input:checked+.slider:before{transform:translateX(16px)}
+  .global{background:var(--card);border:1px solid var(--border);border-radius:8px;
+          padding:14px;margin-bottom:12px}
+  .val{font-size:.75rem;color:var(--sub);margin-left:4px}
+  .info-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:12px}
+  .info-card h2{font-size:.95rem;color:var(--accent);margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:.82rem}
+  th{text-align:left;padding:6px 8px;background:#2a2a2a;color:var(--accent);border-bottom:1px solid var(--border)}
+  td{padding:5px 8px;border-bottom:1px solid #222;color:var(--sub)}
+  td:first-child{color:var(--text);font-family:monospace}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.75rem;font-weight:700}
+  .badge-webapi{background:#0d2a0d;color:#81c784}
+  .badge-artnet{background:#1a2a3a;color:var(--accent)}
+  .badge-modbus{background:#2a1a0d;color:#ffb74d}
+</style>
+</head>
+<body>
+<h1>⚡ LEDCon</h1>
+<nav>
+  <a href="/" class="active">Dashboard</a>
+  <a href="/net.html">Netzwerk</a>
+  <a href="/leds.html">LED Setup</a>
+  <a href="/settings.html">Einstellungen</a>
+  <a href="/help.html">Hilfe</a>
+</nav>
+
+<div id="status">
+  <span id="s-ip">IP: –</span>
+  <span id="s-proto">–</span>
+  <span id="s-up">Uptime: –</span>
+  <span id="s-heap">Heap: –</span>
+  <span id="s-relay" style="cursor:pointer" onclick="toggleRelay()" title="LED-Stromversorgung">⚡ Relay: –</span>
+</div>
+<div id="ui-warning" style="display:none;background:#2a1a00;border:1px solid #f90;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:.8rem;color:#f90">
+  ⚠ Test-Modus aktiv — UI setzt sich in <span id="ui-countdown">5:00</span> min zurück
+</div>
+
+<!-- ── WebAPI + Modbus: Global-Regler ──────────────────────────────────────── -->
+<div class="global" id="block-global">
+  <div class="row">
+    <strong style="flex:1">Global</strong>
+    <label class="toggle"><input type="checkbox" id="g-en" onchange="setGlobal()"><span class="slider"></span></label>
+  </div>
+  <label>Helligkeit <span class="val" id="g-bri-v">255</span></label>
+  <input type="range" id="g-bri" min="0" max="255" value="255"
+         oninput="document.getElementById('g-bri-v').textContent=this.value"
+         onchange="setGlobal()">
+</div>
+
+<!-- ── WebAPI: Segment-Karten ─────────────────────────────────────────────── -->
+<div class="grid" id="segs"></div>
+
+<!-- ── Art-Net Info-Panel ─────────────────────────────────────────────────── -->
+<div class="info-card" id="block-artnet" style="display:none">
+  <h2>🎭 Art-Net aktiv</h2>
+  <table>
+    <tr><th>Parameter</th><th>Wert</th></tr>
+    <tr><td>Universe</td><td id="an-univ">–</td></tr>
+    <tr><td>Pixel-Gruppen</td><td id="an-groups">–</td></tr>
+    <tr><td>LEDs pro Gruppe</td><td id="an-grp">–</td></tr>
+    <tr><td>DMX-Kanäle gesamt</td><td id="an-ch">–</td></tr>
+    <tr><td>Kanäle pro Gruppe</td><td>4 (R, G, B, Dimmer)</td></tr>
+    <tr><td>UDP-Port</td><td>6454</td></tr>
+  </table>
+  <p style="font-size:.75rem;color:var(--sub);margin-top:10px">
+    Kanal-Formel: Gruppe N → Kanal <span id="an-formula">N×4+1</span> bis <span id="an-formula2">N×4+4</span>
+    &nbsp;·&nbsp; <a href="/settings.html" style="color:var(--accent)">Konfigurieren</a>
+    &nbsp;·&nbsp; <a href="/help.html#artnet" style="color:var(--accent)">Hilfe</a>
+  </p>
+</div>
+
+<!-- ── Modbus Info-Panel ──────────────────────────────────────────────────── -->
+<div class="info-card" id="block-modbus" style="display:none">
+  <h2>🏭 Modbus TCP aktiv</h2>
+  <table>
+    <tr><th>Parameter</th><th>Wert</th></tr>
+    <tr><td>IP-Adresse</td><td id="mb-ip">–</td></tr>
+    <tr><td>Port</td><td id="mb-port">502</td></tr>
+    <tr><td>Unit-ID</td><td>1</td></tr>
+    <tr><td>Segmente</td><td id="mb-segs">–</td></tr>
+  </table>
+  <p style="font-size:.75rem;color:var(--sub);margin-top:10px">
+    Register 0=GlobalEn, 1=GlobalBri, 10+n×10 = Segment n (R,G,B,Bri,Fx,En)
+    &nbsp;·&nbsp; <a href="/help.html" style="color:var(--accent)">Vollständige Register-Tabelle</a>
+  </p>
+</div>
+
+<script>
+const FX=['Aus','Static','Flash 4Hz','Flash 0.5Hz','Pulse 2Hz','Pulse 0.33Hz','Strobe 20Hz','Pulse 1Hz','Chase'];
+const MODE_WEBAPI=0, MODE_ARTNET=1, MODE_MODBUS=2;
+let _mode = MODE_MODBUS;
+let _state = {};
+
+function fmtUptime(s){
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;
+  return `${h}h ${m}m ${ss}s`;
+}
+
+function applyMode(d){
+  const m = d.mode ?? MODE_MODBUS;
+  if(m === _mode && Object.keys(_state).length > 0) return; // no layout change
+  _mode = m;
+
+  const protoEl = document.getElementById('s-proto');
+  const labels  = ['🌐 Web API','🎭 Art-Net','🏭 Modbus TCP'];
+  const classes = ['badge-webapi','badge-artnet','badge-modbus'];
+  protoEl.innerHTML = `<span class="badge ${classes[m]}">${labels[m]}</span>`;
+
+  // Show/hide blocks
+  document.getElementById('block-global').style.display = m!==MODE_ARTNET ? 'block':'none';
+  document.getElementById('segs').style.display         = m===MODE_WEBAPI  ? 'grid':'none';
+  document.getElementById('block-artnet').style.display = m===MODE_ARTNET  ? 'block':'none';
+  document.getElementById('block-modbus').style.display = m===MODE_MODBUS  ? 'block':'none';
+}
+
+function updateArtNet(d){
+  const an = d.artnet || {};
+  document.getElementById('an-univ').textContent   = an.univ ?? '–';
+  document.getElementById('an-groups').textContent = an.groups ?? '–';
+  document.getElementById('an-grp').textContent    = an.grp ?? '–';
+  document.getElementById('an-ch').textContent     = an.chTotal ?? '–';
+}
+
+function updateModbus(d){
+  document.getElementById('mb-ip').textContent   = d.ip || '–';
+  document.getElementById('mb-port').textContent = d.mbport || 502;
+  document.getElementById('mb-segs').textContent = d.segs || '–';
+}
+
+async function fetchStatus(){
+  try{
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    _state = d;
+
+    document.getElementById('s-ip').textContent  = 'IP: '+d.ip;
+    document.getElementById('s-up').textContent  = 'Uptime: '+fmtUptime(d.uptime);
+    document.getElementById('s-heap').textContent= 'Heap: '+(d.heap/1024).toFixed(0)+'KB';
+
+    const relay = document.getElementById('s-relay');
+    relay.dataset.on = d.relay;
+    relay.textContent = '⚡ Relay: '+(d.relay?'AN':'AUS');
+    relay.style.color = d.relay?'var(--accent)':'var(--sub)';
+
+    applyMode(d);
+
+    if(d.mode === MODE_ARTNET) {
+      updateArtNet(d);
+    } else {
+      updateModbus(d);
+      document.getElementById('g-en').checked = d.globalEn;
+      document.getElementById('g-bri').value  = d.globalBri;
+      document.getElementById('g-bri-v').textContent = d.globalBri;
+      if(d.mode === MODE_WEBAPI) renderSegs(d.seg||[], d.segs||0);
+    }
+  }catch(e){
+    document.getElementById('s-proto').textContent = 'Verbindung…';
+  }
+}
+
+// ── WebAPI: Segment-Karten ────────────────────────────────────────────────────
+function hexToRgb(h){const r=parseInt(h.slice(1,3),16),g=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16);return{r,g,b};}
+function rgbToHex(r,g,b){return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');}
+
+function renderSegs(segs,num){
+  const c=document.getElementById('segs');
+  for(let i=0;i<num;i++){
+    let card=document.getElementById('seg-'+i);
+    if(!card){
+      card=document.createElement('div');
+      card.className='card';card.id='seg-'+i;
+      card.innerHTML=`
+        <h2><span class="dot" id="dot-${i}"></span>Segment ${i}</h2>
+        <div class="row">
+          <div style="flex:1"><label>Farbe</label>
+            <input type="color" id="col-${i}" value="#ff0000" onchange="sendSeg(${i})"></div>
+          <div><label>Aktiv</label>
+            <label class="toggle"><input type="checkbox" id="en-${i}" onchange="sendSeg(${i})"><span class="slider"></span></label></div>
+        </div>
+        <label>Helligkeit <span class="val" id="bri-v-${i}">255</span></label>
+        <input type="range" id="bri-${i}" min="0" max="255" value="255"
+               oninput="document.getElementById('bri-v-${i}').textContent=this.value"
+               onchange="sendSeg(${i})">
+        <label>Effekt</label>
+        <select id="fx-${i}" onchange="sendSeg(${i})">
+          ${FX.map((n,j)=>`<option value="${j}">${j} — ${n}</option>`).join('')}
+        </select>`;
+      c.appendChild(card);
+    }
+    if(i<segs.length){
+      const s=segs[i];
+      document.getElementById('col-'+i).value=rgbToHex(s.r,s.g,s.b);
+      document.getElementById('bri-'+i).value=s.bri;
+      document.getElementById('bri-v-'+i).textContent=s.bri;
+      document.getElementById('fx-'+i).value=s.fx;
+      document.getElementById('en-'+i).checked=s.en;
+      document.getElementById('dot-'+i).style.background=s.en?rgbToHex(s.r,s.g,s.b):'#333';
+    }
+  }
+}
+
+async function sendSeg(i){
+  const col=hexToRgb(document.getElementById('col-'+i).value);
+  const bri=parseInt(document.getElementById('bri-'+i).value);
+  const fx=parseInt(document.getElementById('fx-'+i).value);
+  const en=document.getElementById('en-'+i).checked;
+  await fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({...col,bri,fx,en})});
+}
+
+async function setGlobal(){
+  const en=document.getElementById('g-en').checked;
+  const bri=parseInt(document.getElementById('g-bri').value);
+  await fetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({en,bri})});
+}
+
+// ── Relay ─────────────────────────────────────────────────────────────────────
+async function toggleRelay(){
+  const cur=document.getElementById('s-relay').dataset.on==='true';
+  await fetch('/api/relay',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({on:!cur})});
+}
+
+// ── 5-min Auto-Reset ──────────────────────────────────────────────────────────
+let _uiTimer=null,_uiAt=0,_uiActive=false;
+function uiStartTimer(){
+  if(_uiTimer) clearInterval(_uiTimer);
+  _uiActive=true; _uiAt=Date.now()+300000;
+  document.getElementById('ui-warning').style.display='block';
+  _uiTimer=setInterval(()=>{
+    const rem=Math.max(0,_uiAt-Date.now());
+    const m=Math.floor(rem/60000),s=Math.floor((rem%60000)/1000);
+    document.getElementById('ui-countdown').textContent=`${m}:${s.toString().padStart(2,'0')}`;
+    if(rem<=0) uiReset();
+  },1000);
+}
+function uiReset(){
+  clearInterval(_uiTimer); _uiActive=false;
+  document.getElementById('ui-warning').style.display='none';
+  const n=_state.segs||4;
+  for(let i=0;i<n;i++){
+    const cb=document.getElementById('en-'+i);
+    if(cb&&cb.checked){cb.checked=false;
+      fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({en:false})});}
+  }
+}
+document.addEventListener('change',e=>{
+  if(e.target.closest('#segs')||e.target.id==='g-en'||e.target.id==='g-bri'){
+    if(!_uiActive) uiStartTimer(); else _uiAt=Date.now()+300000;
+  }
+},true);
+
+fetchStatus();
+setInterval(fetchStatus,2000);
+</script>
+</body>
+</html>

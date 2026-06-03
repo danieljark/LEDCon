@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEDCon — Netzwerk</title>
+<style>
+  :root{--bg:#111;--card:#1e1e1e;--border:#333;--accent:#4fc3f7;--text:#eee;--sub:#888}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;padding:16px;max-width:520px}
+  h1{font-size:1.3rem;color:var(--accent);margin-bottom:4px}
+  nav a{color:var(--sub);text-decoration:none;margin-right:16px;font-size:.85rem}
+  nav a:hover{color:var(--accent)}
+  nav a.active{color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:14px}
+  h2{font-size:.95rem;color:var(--accent);margin-bottom:12px}
+  label{display:block;font-size:.75rem;color:var(--sub);margin:10px 0 3px}
+  input[type=text],input[type=password],input[type=number]{
+    width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
+    border-radius:4px;padding:7px 10px;font-size:.9rem}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  button{margin-top:16px;width:100%;background:var(--accent);color:#000;border:none;
+         border-radius:6px;padding:10px;font-size:.95rem;font-weight:600;cursor:pointer}
+  button:hover{opacity:.85}
+  #msg{margin-top:10px;font-size:.85rem;text-align:center;color:var(--accent);min-height:18px}
+  .toggle{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .sw{position:relative;display:inline-block;width:38px;height:22px}
+  .sw input{opacity:0;width:0;height:0}
+  .sl{position:absolute;inset:0;background:#444;border-radius:22px;cursor:pointer;transition:.2s}
+  .sl:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;
+              background:#fff;border-radius:50%;transition:.2s}
+  input:checked+.sl{background:var(--accent)}
+  input:checked+.sl:before{transform:translateX(16px)}
+</style>
+</head>
+<body>
+<h1>⚡ LEDCon</h1>
+<nav>
+  <a href="/">Dashboard</a>
+  <a href="/net.html" class="active">Netzwerk</a>
+  <a href="/leds.html">LED Setup</a>
+  <a href="/settings.html">Einstellungen</a>
+  <a href="/help.html">Hilfe</a>
+</nav>
+
+<div style="background:#1e1e1e;border:1px solid #333;border-radius:8px;padding:12px 16px;margin-top:14px;font-size:.85rem">
+  Aktive IP: <strong id="cur-ip" style="color:#4fc3f7">–</strong>
+  &nbsp;·&nbsp; Ethernet: <span id="cur-eth">–</span>
+</div>
+
+<div class="card">
+  <h2>Ethernet</h2>
+  <div class="toggle">
+    <label class="sw"><input type="checkbox" id="dhcp" onchange="toggleDhcp()"><span class="sl"></span></label>
+    <span style="font-size:.85rem">DHCP (automatisch)</span>
+  </div>
+  <div id="static-fields">
+    <label>IP-Adresse</label>
+    <input type="text" id="ip" value="192.168.10.10">
+    <label>Subnetzmaske</label>
+    <input type="text" id="mask" value="255.255.255.0">
+    <label>Gateway</label>
+    <input type="text" id="gw" value="192.168.10.1">
+  </div>
+</div>
+
+<div class="card">
+  <h2>WiFi (optional, Client-Modus)</h2>
+  <label>SSID</label>
+  <input type="text" id="ssid" placeholder="WLAN-Name">
+  <label>Passwort</label>
+  <input type="password" id="pass" placeholder="Passwort">
+</div>
+
+<div class="card">
+  <h2>Access Point</h2>
+  <div class="toggle">
+    <label class="sw"><input type="checkbox" id="apEn" checked onchange="toggleAp()"><span class="sl"></span></label>
+    <span style="font-size:.85rem">AP aktiviert</span>
+  </div>
+  <div id="ap-fields">
+    <label>AP Name (SSID)</label>
+    <input type="text" id="ap" value="LEDcon">
+    <p style="font-size:.75rem;color:#f90;margin-top:8px">⚠ AP deaktivieren nur wenn Ethernet konfiguriert ist — sonst kein Zugriff mehr möglich.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Modbus TCP</h2>
+  <label>Port</label>
+  <input type="number" id="mbport" value="502" min="1" max="65535">
+</div>
+
+<button onclick="save()">Speichern &amp; Neustart</button>
+<div id="msg"></div>
+
+<script>
+function toggleDhcp(){
+  document.getElementById('static-fields').style.display=
+    document.getElementById('dhcp').checked?'none':'block';
+}
+function toggleAp(){
+  document.getElementById('ap-fields').style.display=
+    document.getElementById('apEn').checked?'block':'none';
+}
+
+async function loadCfg(){
+  try{
+    const d=(await (await fetch('/api/cfg')).json()).net;
+    document.getElementById('dhcp').checked=d.dhcp||false;
+    document.getElementById('ip').value=d.ip||'192.168.10.10';
+    document.getElementById('mask').value=d.mask||'255.255.255.0';
+    document.getElementById('gw').value=d.gw||'192.168.10.1';
+    document.getElementById('ssid').value=d.ssid||'';
+    document.getElementById('ap').value=d.ap||'LEDcon';
+    document.getElementById('apEn').checked=d.apEn!==false;
+    document.getElementById('mbport').value=d.mbport||502;
+    toggleDhcp();
+    toggleAp();
+  }catch(e){}
+}
+
+async function save(){
+  const body={
+    dhcp: document.getElementById('dhcp').checked,
+    ip:   document.getElementById('ip').value,
+    mask: document.getElementById('mask').value,
+    gw:   document.getElementById('gw').value,
+    ssid: document.getElementById('ssid').value,
+    pass: document.getElementById('pass').value,
+    ap:   document.getElementById('ap').value,
+    apEn: document.getElementById('apEn').checked,
+    mbport: parseInt(document.getElementById('mbport').value)
+  };
+  try{
+    await fetch('/api/net',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('msg').textContent='✓ Gespeichert — Neustart läuft…';
+  }catch(e){
+    document.getElementById('msg').textContent='Fehler beim Speichern';
+  }
+}
+
+loadCfg();
+
+async function loadStatus(){
+  try{
+    const d=await(await fetch('/api/status')).json();
+    document.getElementById('cur-ip').textContent=d.ip;
+    document.getElementById('cur-eth').textContent=d.ip!=='192.168.10.1'?'verbunden':'nicht verbunden';
+  }catch(e){}
+}
+loadStatus();
+</script>
+</body>
+</html>
