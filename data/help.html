@@ -141,11 +141,6 @@ fx: 0=Aus 1=Static 2=Flash4Hz 3=Flash0.5Hz 4=Pulse2Hz
     <pre>{"on":true}</pre>
     <h3><span class="badge get">GET</span> /api/cfg</h3>
     <p>Komplette Konfiguration lesen</p>
-    <h3><span class="badge post">POST</span> /api/net</h3>
-    <p>Netzwerk-Konfiguration speichern (löst Neustart aus)</p>
-    <pre>{"dhcp":false,"ip":"192.168.10.10","mask":"255.255.255.0",
- "gw":"192.168.10.1","ssid":"","pass":"","ap":"LEDcon",
- "apEn":true,"mbport":502}</pre>
   </div>
 </div>
 
@@ -185,16 +180,8 @@ fx: 0=Aus 1=Static 2=Flash4Hz 3=Flash0.5Hz 4=Pulse2Hz
     <ul>
       <li>Universe: wie in LEDCon konfiguriert (Standard: 0)</li>
       <li>Start-Kanal: 1 (Art-Net zählt ab 1)</li>
-      <li>Anzahl Kanäle: Gruppen × 3</li>
+      <li>Anzahl Kanäle: Gruppen × 4</li>
       <li>Patch-Typ: RGB oder Generic</li>
-    </ul>
-    <h3>Kompatible Software</h3>
-    <ul>
-      <li>QLC+ (Open Lighting Architecture)</li>
-      <li>MA Lighting grandMA</li>
-      <li>Resolume Avenue / Arena</li>
-      <li>MadMapper, TouchDesigner, Capture</li>
-      <li>Node-RED mit artnet-Nodes</li>
     </ul>
   </div>
 </div>
@@ -210,15 +197,6 @@ fx: 0=Aus 1=Static 2=Flash4Hz 3=Flash0.5Hz 4=Pulse2Hz
     <div id="ota-bar" style="display:none;margin-top:8px;background:#2a2a2a;border-radius:4px;height:8px">
       <div id="ota-progress" style="background:var(--accent);height:8px;border-radius:4px;width:0%;transition:width .3s"></div>
     </div>
-  </div>
-  <div class="card">
-    <h2>Hinweise</h2>
-    <ul>
-      <li>Firmware-Datei: <code>firmware.bin</code> aus dem PlatformIO-Build-Ordner</li>
-      <li>Pfad: <code>.pio/build/ledcon_hw/firmware.bin</code></li>
-      <li>Während des Updates keine Verbindung trennen</li>
-      <li>Das Board neustartet automatisch nach erfolgreichem Update</li>
-    </ul>
   </div>
 </div>
 

@@ -115,6 +115,12 @@ void leds_begin() {
     gpio_set_level(GPIO_NUM_5, 1);
     delay(50);
 
+    // Pull data line LOW before NeoPixelBus init — prevents WS2812B from
+    // latching garbage bits when GPIO floats HIGH during ESP reset
+    gpio_pad_select_gpio((gpio_num_t)LED_DATA_PIN);
+    gpio_set_direction((gpio_num_t)LED_DATA_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)LED_DATA_PIN, 0);
+    delay(2);
     gpio_reset_pin((gpio_num_t)LED_DATA_PIN);
     _bus = new LedBus(_ledCount, LED_DATA_PIN, NeoBusChannel_0);
     if (_bus) {

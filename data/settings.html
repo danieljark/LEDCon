@@ -21,7 +21,7 @@
   .mode-btn{padding:12px 6px;text-align:center;border:2px solid var(--border);border-radius:8px;
     cursor:pointer;font-size:.85rem;color:var(--sub);transition:.15s}
   .mode-btn.active{border-color:var(--accent);color:var(--accent);background:#0d2333}
-  .mode-btn .icon{font-size:1.4rem;display:block;margin-bottom:4px}
+  .mode-btn .lbl{font-size:.75rem;color:var(--sub);display:block;margin-top:4px}
   button{margin-top:16px;width:100%;background:var(--accent);color:#000;border:none;
     border-radius:6px;padding:10px;font-size:.95rem;font-weight:600;cursor:pointer}
   button:hover{opacity:.85}
@@ -44,13 +44,13 @@
   <h2>Steuerungs-Modus</h2>
   <div class="mode-grid">
     <div class="mode-btn" id="btn-0" onclick="setMode(0)">
-      <span class="icon">🌐</span>Web API<br><small style="color:#666">Alarmanzeige</small>
+      Web API<span class="lbl">Alarm-Anzeige</span>
     </div>
     <div class="mode-btn" id="btn-1" onclick="setMode(1)">
-      <span class="icon">🎭</span>Art-Net<br><small style="color:#666">DMX/RGB</small>
+      Art-Net<span class="lbl">DMX / RGB</span>
     </div>
     <div class="mode-btn" id="btn-2" onclick="setMode(2)">
-      <span class="icon">🏭</span>Modbus TCP<br><small style="color:#666">Industrial</small>
+      Modbus TCP<span class="lbl">Industrial</span>
     </div>
   </div>
   <p class="hint">Nur ein Protokoll ist gleichzeitig aktiv. Änderung startet das Board neu.</p>

@@ -2,22 +2,15 @@
 #include "config.h"
 #include <WiFi.h>
 #include <DNSServer.h>
-
-#ifndef WOKWI_SIM
 #include <ETH.h>
-#endif
 
 static DNSServer _dns;
-static bool _ethUp  = false;
-static bool _apUp   = false;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
+static bool _ethUp = false;
+static bool _apUp  = false;
 
 static IPAddress parseIP(const char* s) {
     IPAddress ip; ip.fromString(s); return ip;
 }
-
-// ── WiFi AP ──────────────────────────────────────────────────────────────────
 
 static void startAP() {
     WiFi.softAPConfig(
@@ -25,15 +18,12 @@ static void startAP() {
         IPAddress(192,168,10,1),
         IPAddress(255,255,255,0)
     );
-    WiFi.softAP(g_cfg.net.apSsid, "");  // open, no password
+    WiFi.softAP(g_cfg.net.apSsid, "");
     _dns.start(53, "*", IPAddress(192,168,10,1));
     _apUp = true;
     Serial.printf("[NET] AP started: SSID=%s  IP=192.168.10.1\n", g_cfg.net.apSsid);
 }
 
-// ── Ethernet (real hardware) ─────────────────────────────────────────────────
-
-#ifndef WOKWI_SIM
 static void onEthEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_ETH_START:
@@ -52,36 +42,18 @@ static void onEthEvent(WiFiEvent_t event) {
             _ethUp = false;
             Serial.println("[NET] ETH disconnected");
             break;
-        default:
-            Serial.printf("[NET] ETH event: %d\n", (int)event);
-            break;
+        default: break;
     }
 }
-#endif
-
-// ── WiFi STA (Wokwi or optional client) ─────────────────────────────────────
 
 static void startWifiSta() {
-#ifdef WOKWI_SIM
-    // Wokwi virtual network
-    WiFi.begin("Wokwi-GUEST", "");
-    Serial.println("[NET] Connecting to Wokwi-GUEST...");
-#else
     if (strlen(g_cfg.net.wifiSsid) > 0) {
         WiFi.begin(g_cfg.net.wifiSsid, g_cfg.net.wifiPass);
         Serial.printf("[NET] WiFi STA: connecting to %s\n", g_cfg.net.wifiSsid);
     }
-#endif
 }
 
-// ── Public ───────────────────────────────────────────────────────────────────
-
 void net_begin() {
-#ifdef WOKWI_SIM
-    WiFi.mode(WIFI_AP_STA);
-    startAP();
-    startWifiSta();
-#else
     WiFi.onEvent(onEthEvent);
     WiFi.mode(WIFI_AP_STA);
 
@@ -99,39 +71,21 @@ void net_begin() {
             parseIP(g_cfg.net.ethMask)
         );
     }
+
     if (g_cfg.net.apEnabled) startAP();
     startWifiSta();
-#endif
 }
 
 void net_loop() {
     if (_apUp) _dns.processNextRequest();
-
-#ifdef WOKWI_SIM
-    static bool _staReported = false;
-    if (!_staReported && WiFi.status() == WL_CONNECTED) {
-        _staReported = true;
-        _ethUp = true;
-        Serial.printf("[NET] WiFi STA up: %s\n", WiFi.localIP().toString().c_str());
-    }
-#endif
 }
 
 IPAddress net_localIP() {
-#ifdef WOKWI_SIM
-    if (WiFi.status() == WL_CONNECTED) return WiFi.localIP();
-    return WiFi.softAPIP();
-#else
     if (_ethUp) return ETH.localIP();
     if (WiFi.status() == WL_CONNECTED) return WiFi.localIP();
     return WiFi.softAPIP();
-#endif
 }
 
 bool net_connected() {
-#ifdef WOKWI_SIM
-    return _apUp;  // Start servers as soon as AP is up; STA is bonus for internet
-#else
     return _ethUp || (g_cfg.net.apEnabled && _apUp) || (WiFi.status() == WL_CONNECTED);
-#endif
 }

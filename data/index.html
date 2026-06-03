@@ -40,10 +40,18 @@
   th{text-align:left;padding:6px 8px;background:#2a2a2a;color:var(--accent);border-bottom:1px solid var(--border)}
   td{padding:5px 8px;border-bottom:1px solid #222;color:var(--sub)}
   td:first-child{color:var(--text);font-family:monospace}
-  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.75rem;font-weight:700}
-  .badge-webapi{background:#0d2a0d;color:#81c784}
-  .badge-artnet{background:#1a2a3a;color:var(--accent)}
-  .badge-modbus{background:#2a1a0d;color:#ffb74d}
+  .badge{display:inline-block;padding:2px 10px;border-radius:3px;font-size:.75rem;font-weight:600;letter-spacing:.04em}
+  .badge-webapi{background:#0d2a0d;color:#81c784;border:1px solid #1a4a1a}
+  .badge-artnet{background:#0d1a2a;color:var(--accent);border:1px solid #1a3a4a}
+  .badge-modbus{background:#1a1400;color:#c8a43a;border:1px solid #3a2a00}
+  .test-toggle{width:100%;background:var(--card);border:1px solid var(--border);border-radius:6px;
+    padding:10px 14px;margin-top:14px;cursor:pointer;font-size:.82rem;color:var(--sub);
+    display:flex;justify-content:space-between;align-items:center;user-select:none;letter-spacing:.02em}
+  .test-toggle:hover{border-color:var(--accent);color:var(--text)}
+  .test-body{display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;
+    padding:14px;background:var(--card);margin-top:-1px}
+  .test-body.open{display:block}
+  .test-hint{font-size:.75rem;color:var(--sub);padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -61,10 +69,10 @@
   <span id="s-proto">–</span>
   <span id="s-up">Uptime: –</span>
   <span id="s-heap">Heap: –</span>
-  <span id="s-relay" style="cursor:pointer" onclick="toggleRelay()" title="LED-Stromversorgung">⚡ Relay: –</span>
+  <span id="s-relay" style="cursor:pointer" onclick="toggleRelay()" title="LED-Stromversorgung schalten">Relay: –</span>
 </div>
-<div id="ui-warning" style="display:none;background:#2a1a00;border:1px solid #f90;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:.8rem;color:#f90">
-  ⚠ Test-Modus aktiv — UI setzt sich in <span id="ui-countdown">5:00</span> min zurück
+<div id="ui-warning" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:4px;padding:7px 12px;margin:8px 0;font-size:.78rem;color:var(--sub)">
+  Test-Modus aktiv — automatischer Reset in <span id="ui-countdown">5:00</span> min
 </div>
 
 <!-- ── WebAPI + Modbus: Global-Regler ──────────────────────────────────────── -->
@@ -82,9 +90,33 @@
 <!-- ── WebAPI: Segment-Karten ─────────────────────────────────────────────── -->
 <div class="grid" id="segs"></div>
 
+<!-- ── Test-Modus: immer verfügbar (auch in Modbus/Art-Net) ──────────────── -->
+<div id="test-section" style="display:none">
+  <div class="test-toggle" id="test-toggle" onclick="toggleTest()">
+    <span>LED Test-Override</span>
+    <span id="test-arrow" style="font-size:.7rem">▼</span>
+  </div>
+  <div class="test-body" id="test-body">
+    <div class="test-hint">
+      Temporärer Test-Override — überschreibt aktives Protokoll für max. <span id="ui-countdown2">5:00</span> min
+    </div>
+    <div class="global" style="margin-bottom:10px">
+      <div class="row">
+        <strong style="flex:1;font-size:.85rem">Global</strong>
+        <label class="toggle"><input type="checkbox" id="tg-en" checked onchange="setGlobal()"><span class="slider"></span></label>
+      </div>
+      <label>Helligkeit <span class="val" id="tg-bri-v">255</span></label>
+      <input type="range" id="tg-bri" min="0" max="255" value="255"
+             oninput="document.getElementById('tg-bri-v').textContent=this.value"
+             onchange="setGlobal()">
+    </div>
+    <div class="grid" id="test-segs"></div>
+  </div>
+</div>
+
 <!-- ── Art-Net Info-Panel ─────────────────────────────────────────────────── -->
 <div class="info-card" id="block-artnet" style="display:none">
-  <h2>🎭 Art-Net aktiv</h2>
+  <h2>Art-Net — Aktiv</h2>
   <table>
     <tr><th>Parameter</th><th>Wert</th></tr>
     <tr><td>Universe</td><td id="an-univ">–</td></tr>
@@ -103,7 +135,7 @@
 
 <!-- ── Modbus Info-Panel ──────────────────────────────────────────────────── -->
 <div class="info-card" id="block-modbus" style="display:none">
-  <h2>🏭 Modbus TCP aktiv</h2>
+  <h2>Modbus TCP — Aktiv</h2>
   <table>
     <tr><th>Parameter</th><th>Wert</th></tr>
     <tr><td>IP-Adresse</td><td id="mb-ip">–</td></tr>
@@ -134,7 +166,7 @@ function applyMode(d){
   _mode = m;
 
   const protoEl = document.getElementById('s-proto');
-  const labels  = ['🌐 Web API','🎭 Art-Net','🏭 Modbus TCP'];
+  const labels  = ['WEB API','ART-NET','MODBUS TCP'];
   const classes = ['badge-webapi','badge-artnet','badge-modbus'];
   protoEl.innerHTML = `<span class="badge ${classes[m]}">${labels[m]}</span>`;
 
@@ -143,6 +175,8 @@ function applyMode(d){
   document.getElementById('segs').style.display         = m===MODE_WEBAPI  ? 'grid':'none';
   document.getElementById('block-artnet').style.display = m===MODE_ARTNET  ? 'block':'none';
   document.getElementById('block-modbus').style.display = m===MODE_MODBUS  ? 'block':'none';
+  // Test panel: visible in Modbus and Art-Net (not needed for WebAPI which already shows segs)
+  document.getElementById('test-section').style.display = m!==MODE_WEBAPI ? 'block':'none';
 }
 
 function updateArtNet(d){
@@ -171,7 +205,7 @@ async function fetchStatus(){
 
     const relay = document.getElementById('s-relay');
     relay.dataset.on = d.relay;
-    relay.textContent = '⚡ Relay: '+(d.relay?'AN':'AUS');
+    relay.textContent = 'Relay: '+(d.relay?'EIN':'AUS');
     relay.style.color = d.relay?'var(--accent)':'var(--sub)';
 
     applyMode(d);
@@ -184,6 +218,13 @@ async function fetchStatus(){
       document.getElementById('g-bri').value  = d.globalBri;
       document.getElementById('g-bri-v').textContent = d.globalBri;
       if(d.mode === MODE_WEBAPI) renderSegs(d.seg||[], d.segs||0);
+    }
+    // Always update test segments (for Modbus/Art-Net test panel)
+    if(d.mode !== MODE_WEBAPI) {
+      document.getElementById('tg-en').checked = d.globalEn;
+      document.getElementById('tg-bri').value  = d.globalBri;
+      document.getElementById('tg-bri-v').textContent = d.globalBri;
+      renderTestSegs(d.seg||[], d.segs||0);
     }
   }catch(e){
     document.getElementById('s-proto').textContent = 'Verbindung…';
@@ -241,10 +282,22 @@ async function sendSeg(i){
 }
 
 async function setGlobal(){
-  const en=document.getElementById('g-en').checked;
-  const bri=parseInt(document.getElementById('g-bri').value);
+  // Works for both WebAPI global controls and test mode controls
+  const enId  = _mode===MODE_WEBAPI ? 'g-en'  : 'tg-en';
+  const briId = _mode===MODE_WEBAPI ? 'g-bri' : 'tg-bri';
+  const en=document.getElementById(enId).checked;
+  const bri=parseInt(document.getElementById(briId).value);
   await fetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({en,bri})});
+}
+
+// ── Test panel toggle ──────────────────────────────────────────────────────────
+let _testOpen = false;
+function toggleTest(){
+  _testOpen = !_testOpen;
+  document.getElementById('test-body').classList.toggle('open', _testOpen);
+  document.getElementById('test-arrow').textContent = _testOpen ? '▲' : '▼';
+  if(_testOpen) uiStartTimer();
 }
 
 // ── Relay ─────────────────────────────────────────────────────────────────────
@@ -252,6 +305,55 @@ async function toggleRelay(){
   const cur=document.getElementById('s-relay').dataset.on==='true';
   await fetch('/api/relay',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({on:!cur})});
+}
+
+// ── Test-Segment-Karten (identisch zu renderSegs, aber in #test-segs) ─────────
+function renderTestSegs(segs, num){
+  const c = document.getElementById('test-segs');
+  for(let i=0;i<num;i++){
+    let card = document.getElementById('tseg-'+i);
+    if(!card){
+      card=document.createElement('div');
+      card.className='card';card.id='tseg-'+i;
+      card.innerHTML=`
+        <h2><span class="dot" id="tdot-${i}"></span>Segment ${i}</h2>
+        <div class="row">
+          <div style="flex:1"><label>Farbe</label>
+            <input type="color" id="tcol-${i}" value="#ff0000" onchange="sendTestSeg(${i})"></div>
+          <div><label>Aktiv</label>
+            <label class="toggle"><input type="checkbox" id="ten-${i}" onchange="sendTestSeg(${i})"><span class="slider"></span></label></div>
+        </div>
+        <label>Helligkeit <span class="val" id="tbri-v-${i}">255</span></label>
+        <input type="range" id="tbri-${i}" min="0" max="255" value="255"
+               oninput="document.getElementById('tbri-v-${i}').textContent=this.value"
+               onchange="sendTestSeg(${i})">
+        <label>Effekt</label>
+        <select id="tfx-${i}" onchange="sendTestSeg(${i})">
+          ${FX.map((n,j)=>`<option value="${j}">${j} — ${n}</option>`).join('')}
+        </select>`;
+      c.appendChild(card);
+    }
+    if(i<segs.length){
+      const s=segs[i];
+      document.getElementById('tcol-'+i).value=rgbToHex(s.r,s.g,s.b);
+      document.getElementById('tbri-'+i).value=s.bri;
+      document.getElementById('tbri-v-'+i).textContent=s.bri;
+      document.getElementById('tfx-'+i).value=s.fx;
+      document.getElementById('ten-'+i).checked=s.en;
+      document.getElementById('tdot-'+i).style.background=s.en?rgbToHex(s.r,s.g,s.b):'#333';
+    }
+  }
+}
+
+async function sendTestSeg(i){
+  if(!_testOpen) return;  // only send if test panel is open
+  if(!_uiActive) uiStartTimer(); else _uiAt=Date.now()+300000;
+  const col=hexToRgb(document.getElementById('tcol-'+i).value);
+  const bri=parseInt(document.getElementById('tbri-'+i).value);
+  const fx=parseInt(document.getElementById('tfx-'+i).value);
+  const en=document.getElementById('ten-'+i).checked;
+  await fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({...col,bri,fx,en})});
 }
 
 // ── 5-min Auto-Reset ──────────────────────────────────────────────────────────
@@ -263,20 +365,30 @@ function uiStartTimer(){
   _uiTimer=setInterval(()=>{
     const rem=Math.max(0,_uiAt-Date.now());
     const m=Math.floor(rem/60000),s=Math.floor((rem%60000)/1000);
-    document.getElementById('ui-countdown').textContent=`${m}:${s.toString().padStart(2,'0')}`;
+    const t=`${m}:${s.toString().padStart(2,'0')}`;
+    document.getElementById('ui-countdown').textContent=t;
+    const c2=document.getElementById('ui-countdown2');
+    if(c2) c2.textContent=t;
     if(rem<=0) uiReset();
   },1000);
 }
 function uiReset(){
-  clearInterval(_uiTimer); _uiActive=false;
+  clearInterval(_uiTimer); _uiActive=false; _testOpen=false;
   document.getElementById('ui-warning').style.display='none';
+  document.getElementById('test-body').classList.remove('open');
+  document.getElementById('test-arrow').textContent='▼';
   const n=_state.segs||4;
   for(let i=0;i<n;i++){
-    const cb=document.getElementById('en-'+i);
-    if(cb&&cb.checked){cb.checked=false;
-      fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({en:false})});}
+    ['en-','ten-'].forEach(pre=>{
+      const cb=document.getElementById(pre+i);
+      if(cb&&cb.checked){cb.checked=false;
+        fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({en:false})});}
+    });
   }
+  // Turn all LEDs off
+  fetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({en:false})});
 }
 document.addEventListener('change',e=>{
   if(e.target.closest('#segs')||e.target.id==='g-en'||e.target.id==='g-bri'){
