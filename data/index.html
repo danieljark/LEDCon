@@ -162,7 +162,6 @@ function fmtUptime(s){
 
 function applyMode(d){
   const m = d.mode ?? MODE_MODBUS;
-  if(m === _mode && Object.keys(_state).length > 0) return; // no layout change
   _mode = m;
 
   const protoEl = document.getElementById('s-proto');
@@ -175,8 +174,8 @@ function applyMode(d){
   document.getElementById('segs').style.display         = m===MODE_WEBAPI  ? 'grid':'none';
   document.getElementById('block-artnet').style.display = m===MODE_ARTNET  ? 'block':'none';
   document.getElementById('block-modbus').style.display = m===MODE_MODBUS  ? 'block':'none';
-  // Test panel: visible in Modbus and Art-Net (not needed for WebAPI which already shows segs)
-  document.getElementById('test-section').style.display = m!==MODE_WEBAPI ? 'block':'none';
+  // Test panel: only for Modbus TCP (WebAPI has segs directly, Art-Net has its own flow)
+  document.getElementById('test-section').style.display = m===MODE_MODBUS ? 'block':'none';
 }
 
 function updateArtNet(d){

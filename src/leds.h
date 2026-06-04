@@ -54,8 +54,10 @@ void leds_setRelay(bool on);
 bool leds_getRelay();
 
 // Art-Net direct pixel control (called from artnet.cpp)
+void leds_clearArtNetBuffer(uint16_t start, uint16_t end);
 void leds_writeArtNetGroup(uint16_t start, uint16_t end, uint8_t r, uint8_t g, uint8_t b);
 void leds_flushArtNet();
+void leds_artnetPulse();
 
 // Thread-safe write from Modbus / Web task
 void leds_writeSeg(uint8_t seg, const SegState& s);

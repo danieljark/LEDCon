@@ -6,6 +6,25 @@ Config g_cfg;
 
 static uint32_t _lastSave = 0;
 
+static void clampConfigToHardware() {
+    if (g_cfg.strip.count > LED_MAX_COUNT) {
+        Serial.printf("[CFG] strip.count %u > LED_MAX_COUNT %u, clamping\n",
+                      g_cfg.strip.count, LED_MAX_COUNT);
+        g_cfg.strip.count = LED_MAX_COUNT;
+    }
+
+    uint16_t maxLed = (g_cfg.strip.count > 0) ? (g_cfg.strip.count - 1) : 0;
+    for (uint8_t i = 0; i < g_cfg.numSegs; i++) {
+        if (g_cfg.segs[i].start > maxLed) g_cfg.segs[i].start = maxLed;
+        if (g_cfg.segs[i].end   > maxLed) g_cfg.segs[i].end   = maxLed;
+        if (g_cfg.segs[i].end < g_cfg.segs[i].start) {
+            uint16_t tmp = g_cfg.segs[i].start;
+            g_cfg.segs[i].start = g_cfg.segs[i].end;
+            g_cfg.segs[i].end = tmp;
+        }
+    }
+}
+
 void config_defaults() {
     g_cfg = Config{};
     // Default 4 equal segments over 50 LEDs
@@ -14,6 +33,7 @@ void config_defaults() {
     g_cfg.segs[1].start=12; g_cfg.segs[1].end=23;
     g_cfg.segs[2].start=24; g_cfg.segs[2].end=36;
     g_cfg.segs[3].start=37; g_cfg.segs[3].end=49;
+    clampConfigToHardware();
 }
 
 bool config_load() {
@@ -78,9 +98,17 @@ bool config_load() {
     g_cfg.mode = doc["mode"] | (uint8_t)MODE_MODBUS;
     JsonObject an = doc["artnet"];
     if (!an.isNull()) {
-        g_cfg.artnet.universe  = an["univ"]  | 0;
-        g_cfg.artnet.groupSize = an["grp"]   | 3;
+        g_cfg.artnet.universe  = an["univ"]  | ARTNET_DEFAULT_UNIVERSE;
+        g_cfg.artnet.groupSize = an["grp"]   | ARTNET_DEFAULT_GROUP_SIZE;
     }
+
+    JsonObject auth = doc["auth"];
+    if (!auth.isNull()) {
+        strlcpy(g_cfg.auth.username, auth["user"] | "admin", 33);
+        strlcpy(g_cfg.auth.password, auth["pass"] | "", 65);
+    }
+
+    clampConfigToHardware();
 
     Serial.printf("[CFG] Loaded: %d segs, pin=%d, count=%d\n",
                   g_cfg.numSegs, g_cfg.strip.pin, g_cfg.strip.count);
@@ -123,6 +151,10 @@ bool config_save(bool force) {
     JsonObject an = doc["artnet"].to<JsonObject>();
     an["univ"] = g_cfg.artnet.universe;
     an["grp"]  = g_cfg.artnet.groupSize;
+
+    JsonObject auth = doc["auth"].to<JsonObject>();
+    auth["user"] = g_cfg.auth.username;
+    auth["pass"] = g_cfg.auth.password;
 
     File f = LittleFS.open("/config.json", "w");
     if (!f) { Serial.println("[CFG] Save failed"); return false; }

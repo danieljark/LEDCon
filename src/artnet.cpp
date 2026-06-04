@@ -30,8 +30,9 @@ static void onPacket(AsyncUDPPacket& pkt) {
     uint16_t  ledCount  = g_cfg.strip.count;
     uint16_t  numGroups = (ledCount + grpSize - 1) / grpSize;
 
+    uint16_t lastLed = 0;
     for (uint16_t g = 0; g < numGroups; g++) {
-        uint16_t ch = g * 4;  // 4 channels: R, G, B, Dimmer
+        uint16_t ch = g * 4;
         if (ch + 3 >= dmxLen) break;
 
         float   dim = dmx[ch + 3] / 255.0f;
@@ -43,6 +44,11 @@ static void onPacket(AsyncUDPPacket& pkt) {
         uint16_t end   = min((uint16_t)(start + grpSize - 1), (uint16_t)(ledCount - 1));
 
         leds_writeArtNetGroup(start, end, r, gn, b);
+        lastLed = end + 1;
+    }
+
+    if (lastLed < ledCount) {
+        leds_clearArtNetBuffer(lastLed, ledCount - 1);
     }
     leds_flushArtNet();
 }

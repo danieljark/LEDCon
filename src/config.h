@@ -5,6 +5,16 @@
 #define LED_MAX_SEGS 8
 #endif
 
+// Protocol limits (magic number elimination)
+#define MODBUS_MAX_READ_COUNT 125
+#define MODBUS_MAX_WRITE_COUNT 64
+#define MODBUS_MAX_REGISTER_ADDR 90
+#define MODBUS_REGISTER_BASE_SEGMENTS 10
+#define MODBUS_REGISTER_STRIDE 10
+#define ARTNET_DEFAULT_UNIVERSE 0
+#define ARTNET_DEFAULT_GROUP_SIZE 3
+#define ARTNET_MAX_GROUPS 100
+
 enum ControlMode : uint8_t {
     MODE_WEBAPI = 0,
     MODE_ARTNET = 1,
@@ -39,7 +49,12 @@ struct NetCfg {
 
 struct ArtNetCfg {
     uint16_t universe  = 0;
-    uint8_t  groupSize = 3;   // LEDs per group / segment
+    uint8_t  groupSize = 3;
+};
+
+struct AuthCfg {
+    char username[33] = "admin";
+    char password[65] = "";
 };
 
 struct Config {
@@ -49,6 +64,7 @@ struct Config {
     uint8_t    numSegs  = 4;
     uint8_t    mode     = MODE_MODBUS;
     ArtNetCfg  artnet;
+    AuthCfg    auth;
 };
 
 extern Config g_cfg;

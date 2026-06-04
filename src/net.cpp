@@ -77,7 +77,14 @@ void net_begin() {
 }
 
 void net_loop() {
-    if (_apUp) _dns.processNextRequest();
+    if (_apUp) {
+        static uint32_t _lastDnsProcess = 0;
+        uint32_t now = millis();
+        if (now - _lastDnsProcess >= 10) {
+            _dns.processNextRequest();
+            _lastDnsProcess = now;
+        }
+    }
 }
 
 IPAddress net_localIP() {

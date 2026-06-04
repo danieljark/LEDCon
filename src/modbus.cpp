@@ -22,9 +22,9 @@ static uint16_t readReg(uint16_t addr) {
     if (addr == 0) return g_pGlobalEn  ? 1 : 0;
     if (addr == 1) return g_pGlobalBri;
     if (addr == 2) return g_numSegs;
-    if (addr >= 10 && addr < 90) {
-        uint8_t seg = (addr - 10) / 10;
-        uint8_t fld = (addr - 10) % 10;
+    if (addr >= MODBUS_REGISTER_BASE_SEGMENTS && addr < MODBUS_MAX_REGISTER_ADDR) {
+        uint8_t seg = (addr - MODBUS_REGISTER_BASE_SEGMENTS) / MODBUS_REGISTER_STRIDE;
+        uint8_t fld = (addr - MODBUS_REGISTER_BASE_SEGMENTS) % MODBUS_REGISTER_STRIDE;
         if (seg >= LED_MAX_SEGS) return 0;
         portENTER_CRITICAL(&g_ledMux);
         SegState s = g_pSegs[seg];
@@ -44,9 +44,9 @@ static uint16_t readReg(uint16_t addr) {
 static void writeReg(uint16_t addr, uint16_t val) {
     if (addr == 0) { leds_writeGlobal(val != 0, g_pGlobalBri); return; }
     if (addr == 1) { leds_writeGlobal(g_pGlobalEn, (uint8_t)min(val,(uint16_t)255)); return; }
-    if (addr >= 10 && addr < 90) {
-        uint8_t seg = (addr - 10) / 10;
-        uint8_t fld = (addr - 10) % 10;
+    if (addr >= MODBUS_REGISTER_BASE_SEGMENTS && addr < MODBUS_MAX_REGISTER_ADDR) {
+        uint8_t seg = (addr - MODBUS_REGISTER_BASE_SEGMENTS) / MODBUS_REGISTER_STRIDE;
+        uint8_t fld = (addr - MODBUS_REGISTER_BASE_SEGMENTS) % MODBUS_REGISTER_STRIDE;
         if (seg >= LED_MAX_SEGS) return;
         portENTER_CRITICAL(&g_ledMux);
         SegState s = g_pSegs[seg];
@@ -70,7 +70,7 @@ static ModbusMessage FC03(ModbusMessage req) {
     req.get(2, addr);
     req.get(4, count);
 
-    if (count == 0 || count > 125 || addr + count > 90) {
+    if (count == 0 || count > MODBUS_MAX_READ_COUNT || addr + count > MODBUS_MAX_REGISTER_ADDR) {
         ModbusMessage err;
         err.setServerID(req.getServerID());
         err.setFunctionCode(req.getFunctionCode() | 0x80);
@@ -103,7 +103,7 @@ static ModbusMessage FC16(ModbusMessage req) {
     req.get(4, count);
     req.get(6, bytes);
 
-    if (count == 0 || count > 64 || addr + count > 90) {
+    if (count == 0 || count > MODBUS_MAX_WRITE_COUNT || addr + count > MODBUS_MAX_REGISTER_ADDR) {
         ModbusMessage err;
         err.setServerID(req.getServerID());
         err.setFunctionCode(req.getFunctionCode() | 0x80);

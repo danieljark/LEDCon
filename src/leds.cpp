@@ -29,6 +29,34 @@ static bool _relayOn = true;
 // Art-Net direct pixel buffer (written by artnet.cpp, rendered by leds_loop)
 static RgbColor _artBuf[LED_MAX_COUNT];
 static volatile bool _artDirty = false;
+static uint32_t _artNetLastPacket = 0;
+static const uint32_t ARTNET_TIMEOUT_MS = 10000;
+
+static bool createBus(uint16_t count) {
+    if (_bus) {
+        delete _bus;
+        _bus = nullptr;
+    }
+
+    // Pull data line LOW before NeoPixelBus init — prevents WS2812B from
+    // latching garbage bits when GPIO floats HIGH during ESP reset
+    gpio_pad_select_gpio((gpio_num_t)LED_DATA_PIN);
+    gpio_set_direction((gpio_num_t)LED_DATA_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)LED_DATA_PIN, 0);
+    delay(2);
+    gpio_reset_pin((gpio_num_t)LED_DATA_PIN);
+
+    _bus = new LedBus(count, LED_DATA_PIN, NeoBusChannel_0);
+    if (!_bus) {
+        Serial.println("[LED] ERROR: Bus alloc failed!");
+        return false;
+    }
+
+    _bus->Begin();
+    _bus->ClearTo(RgbColor(0));
+    _bus->Show();
+    return true;
+}
 
 // ── Effect math ──────────────────────────────────────────────────────────────
 
@@ -57,10 +85,12 @@ static void paintSeg(const SegState& seg, uint16_t ledStart, uint16_t ledEnd,
                      uint32_t ms, float gBri)
 {
     if (!_bus || ledStart >= _ledCount) return;
+    if (ledEnd < ledStart) return;
     uint16_t end = min(ledEnd, (uint16_t)(_ledCount - 1));
 
     if (seg.fx == FX_CHASE) {
         uint16_t num  = end - ledStart + 1;
+        if (num == 0) return;
         uint16_t head = (uint16_t)((float)(ms % 1500u) / 1500.0f * num);
         float    sBri = (seg.bri / 255.0f) * gBri;
         for (uint16_t i = 0; i < num; i++) {
@@ -100,7 +130,8 @@ void leds_onNetUp() {
 }
 
 void leds_begin() {
-    _ledCount  = g_cfg.strip.count;
+    _ledCount  = min(g_cfg.strip.count, (uint16_t)LED_MAX_COUNT);
+    g_cfg.strip.count = _ledCount;
     _relayOn   = g_cfg.net.relayOn;
     g_bootPhase = BOOT_NO_NET;
 
@@ -115,21 +146,7 @@ void leds_begin() {
     gpio_set_level(GPIO_NUM_5, 1);
     delay(50);
 
-    // Pull data line LOW before NeoPixelBus init — prevents WS2812B from
-    // latching garbage bits when GPIO floats HIGH during ESP reset
-    gpio_pad_select_gpio((gpio_num_t)LED_DATA_PIN);
-    gpio_set_direction((gpio_num_t)LED_DATA_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)LED_DATA_PIN, 0);
-    delay(2);
-    gpio_reset_pin((gpio_num_t)LED_DATA_PIN);
-    _bus = new LedBus(_ledCount, LED_DATA_PIN, NeoBusChannel_0);
-    if (_bus) {
-        _bus->Begin();
-        _bus->ClearTo(RgbColor(0));
-        _bus->Show();
-    } else {
-        Serial.println("[LED] ERROR: Bus alloc failed!");
-    }
+    createBus(_ledCount);
 
     g_numSegs   = g_cfg.numSegs;
     g_globalEn  = true;
@@ -142,11 +159,11 @@ void leds_begin() {
 }
 
 void leds_applyConfig() {
-    _ledCount = g_cfg.strip.count;
-    if (_bus) {
-        _bus->ClearTo(RgbColor(0));
-        _bus->Show();
-    }
+    _ledCount = min(g_cfg.strip.count, (uint16_t)LED_MAX_COUNT);
+    g_cfg.strip.count = _ledCount;
+    createBus(_ledCount);
+    memset(_artBuf, 0, sizeof(_artBuf));
+    _artDirty = false;
     g_numSegs = g_cfg.numSegs;
 }
 
@@ -191,6 +208,15 @@ void leds_loop() {
 
     // ── Art-Net mode ──────────────────────────────────────────────────────────
     if (g_cfg.mode == MODE_ARTNET) {
+        uint32_t elapsed = ms - _artNetLastPacket;
+        if (elapsed > ARTNET_TIMEOUT_MS) {
+            if (elapsed == ARTNET_TIMEOUT_MS) {
+                Serial.printf("[LED] ArtNet timeout after %lums — clearing\n", elapsed);
+                _bus->ClearTo(RgbColor(0));
+                _bus->Show();
+            }
+            return;
+        }
         if (_artDirty) {
             for (uint16_t i = 0; i < _ledCount; i++) _bus->SetPixelColor(i, _artBuf[i]);
             _bus->Show();
@@ -246,10 +272,24 @@ SegState leds_readSeg(uint8_t seg) {
 }
 
 void leds_writeArtNetGroup(uint16_t start, uint16_t end, uint8_t r, uint8_t g, uint8_t b) {
+    if (start >= LED_MAX_COUNT) return;
     uint16_t lim = min(end, (uint16_t)(LED_MAX_COUNT - 1));
+    if (start > lim) return;
     for (uint16_t i = start; i <= lim; i++) _artBuf[i] = RgbColor(r, g, b);
 }
 
+void leds_clearArtNetBuffer(uint16_t start, uint16_t end) {
+    if (start >= _ledCount) return;
+    uint16_t lim = min(end, (uint16_t)(_ledCount - 1));
+    if (start > lim) return;
+    for (uint16_t i = start; i <= lim; i++) _artBuf[i] = RgbColor(0);
+}
+
 void leds_flushArtNet() {
+    _artNetLastPacket = millis();
     _artDirty = true;
+}
+
+void leds_artnetPulse() {
+    _artNetLastPacket = millis();
 }
