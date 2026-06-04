@@ -88,6 +88,16 @@
 <script>
 let segs=[];
 
+function authHeaders(extra={}){
+  const u=sessionStorage.getItem('authUser')||'admin';
+  const p=sessionStorage.getItem('authPass')||'';
+  return p?{...extra,Authorization:'Basic '+btoa(u+':'+p)}:extra;
+}
+function authFetch(url,opts={}){
+  opts.headers=authHeaders(opts.headers||{});
+  return fetch(url,opts);
+}
+
 function renderSegs(){
   const el=document.getElementById('segs-list');
   el.innerHTML='';
@@ -129,7 +139,9 @@ function collectSegs(){
 
 async function loadCfg(){
   try{
-    const d=await (await fetch('/api/cfg')).json();
+    const r=await authFetch('/api/cfg');
+    if(!r.ok){document.getElementById('msg').textContent='Admin-Passwort in Einstellungen setzen/eingeben';return;}
+    const d=await r.json();
     if(d.strip){
       document.getElementById('pin').value=d.strip.pin||16;
       document.getElementById('count').value=d.strip.count||50;
@@ -157,8 +169,9 @@ async function save(){
     segs:collectSegs()
   };
   try{
-    await fetch('/api/leds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    document.getElementById('msg').textContent='✓ Gespeichert und angewendet';
+    const r=await authFetch('/api/leds',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(await r.text());
+    document.getElementById('msg').textContent='✓ Gespeichert — Neustart läuft…';
   }catch(e){
     document.getElementById('msg').textContent='Fehler beim Speichern';
   }

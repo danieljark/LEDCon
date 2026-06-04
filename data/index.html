@@ -155,6 +155,16 @@ const MODE_WEBAPI=0, MODE_ARTNET=1, MODE_MODBUS=2;
 let _mode = MODE_MODBUS;
 let _state = {};
 
+function authHeaders(extra={}){
+  const u=sessionStorage.getItem('authUser')||'admin';
+  const p=sessionStorage.getItem('authPass')||'';
+  return p?{...extra,Authorization:'Basic '+btoa(u+':'+p)}:extra;
+}
+function authFetch(url,opts={}){
+  opts.headers=authHeaders(opts.headers||{});
+  return fetch(url,opts);
+}
+
 function fmtUptime(s){
   const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;
   return `${h}h ${m}m ${ss}s`;
@@ -276,7 +286,7 @@ async function sendSeg(i){
   const bri=parseInt(document.getElementById('bri-'+i).value);
   const fx=parseInt(document.getElementById('fx-'+i).value);
   const en=document.getElementById('en-'+i).checked;
-  await fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+  await authFetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({...col,bri,fx,en})});
 }
 
@@ -286,7 +296,7 @@ async function setGlobal(){
   const briId = _mode===MODE_WEBAPI ? 'g-bri' : 'tg-bri';
   const en=document.getElementById(enId).checked;
   const bri=parseInt(document.getElementById(briId).value);
-  await fetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
+  await authFetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({en,bri})});
 }
 
@@ -302,7 +312,7 @@ function toggleTest(){
 // ── Relay ─────────────────────────────────────────────────────────────────────
 async function toggleRelay(){
   const cur=document.getElementById('s-relay').dataset.on==='true';
-  await fetch('/api/relay',{method:'POST',headers:{'Content-Type':'application/json'},
+  await authFetch('/api/relay',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({on:!cur})});
 }
 
@@ -351,7 +361,7 @@ async function sendTestSeg(i){
   const bri=parseInt(document.getElementById('tbri-'+i).value);
   const fx=parseInt(document.getElementById('tfx-'+i).value);
   const en=document.getElementById('ten-'+i).checked;
-  await fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+  await authFetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({...col,bri,fx,en})});
 }
 
@@ -381,12 +391,12 @@ function uiReset(){
     ['en-','ten-'].forEach(pre=>{
       const cb=document.getElementById(pre+i);
       if(cb&&cb.checked){cb.checked=false;
-        fetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
+        authFetch('/api/seg?n='+i,{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({en:false})});}
     });
   }
   // Turn all LEDs off
-  fetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
+  authFetch('/api/global',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({en:false})});
 }
 document.addEventListener('change',e=>{

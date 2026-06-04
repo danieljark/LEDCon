@@ -82,6 +82,8 @@
   <div id="ap-fields">
     <label>AP Name (SSID)</label>
     <input type="text" id="ap" value="LEDcon">
+    <label>AP Passwort</label>
+    <input type="password" id="apPass" placeholder="mind. 8 Zeichen">
     <p style="font-size:.75rem;color:#f90;margin-top:8px">⚠ AP deaktivieren nur wenn Ethernet konfiguriert ist — sonst kein Zugriff mehr möglich.</p>
   </div>
 </div>
@@ -96,6 +98,16 @@
 <div id="msg"></div>
 
 <script>
+function authHeaders(extra={}){
+  const u=sessionStorage.getItem('authUser')||'admin';
+  const p=sessionStorage.getItem('authPass')||'';
+  return p?{...extra,Authorization:'Basic '+btoa(u+':'+p)}:extra;
+}
+function authFetch(url,opts={}){
+  opts.headers=authHeaders(opts.headers||{});
+  return fetch(url,opts);
+}
+
 function toggleDhcp(){
   document.getElementById('static-fields').style.display=
     document.getElementById('dhcp').checked?'none':'block';
@@ -107,13 +119,16 @@ function toggleAp(){
 
 async function loadCfg(){
   try{
-    const d=(await (await fetch('/api/cfg')).json()).net;
+    const r=await authFetch('/api/cfg');
+    if(!r.ok){document.getElementById('msg').textContent='Admin-Passwort in Einstellungen setzen/eingeben';return;}
+    const d=(await r.json()).net;
     document.getElementById('dhcp').checked=d.dhcp||false;
     document.getElementById('ip').value=d.ip||'192.168.10.10';
     document.getElementById('mask').value=d.mask||'255.255.255.0';
     document.getElementById('gw').value=d.gw||'192.168.10.1';
     document.getElementById('ssid').value=d.ssid||'';
     document.getElementById('ap').value=d.ap||'LEDcon';
+    document.getElementById('apPass').placeholder=d.apPassSet?'unverändert lassen':'mind. 8 Zeichen';
     document.getElementById('apEn').checked=d.apEn!==false;
     document.getElementById('mbport').value=d.mbport||502;
     toggleDhcp();
@@ -133,8 +148,11 @@ async function save(){
     apEn: document.getElementById('apEn').checked,
     mbport: parseInt(document.getElementById('mbport').value)
   };
+  const apPass=document.getElementById('apPass').value;
+  if(apPass) body.apPass=apPass;
   try{
-    await fetch('/api/net',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await authFetch('/api/net',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(await r.text());
     document.getElementById('msg').textContent='✓ Gespeichert — Neustart läuft…';
   }catch(e){
     document.getElementById('msg').textContent='Fehler beim Speichern';

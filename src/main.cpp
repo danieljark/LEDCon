@@ -40,17 +40,4 @@ void loop() {
         leds_onNetUp();
         _serverStarted = true;
     }
-
-    // Periodic heartbeat so serial monitor shows something even after boot
-    static uint32_t _lastHb = 0;
-    uint32_t now = millis();
-    if (now - _lastHb >= 5000) {
-        _lastHb = now;
-        Serial.printf("[HB] uptime=%lus  heap=%u  servers=%s  ip=%s\n",
-                      now / 1000,
-                      ESP.getFreeHeap(),
-                      _serverStarted ? "UP" : "WAIT",
-                      net_localIP().toString().c_str());
-        Serial.flush();
-    }
 }

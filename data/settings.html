@@ -15,7 +15,7 @@
   .card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:14px}
   h2{font-size:.95rem;color:var(--accent);margin-bottom:12px}
   label{display:block;font-size:.75rem;color:var(--sub);margin:10px 0 3px}
-  select,input[type=number]{width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
+  select,input[type=number],input[type=text],input[type=password]{width:100%;background:#2a2a2a;color:var(--text);border:1px solid var(--border);
     border-radius:4px;padding:7px 10px;font-size:.9rem}
   .mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
   .mode-btn{padding:12px 6px;text-align:center;border:2px solid var(--border);border-radius:8px;
@@ -65,11 +65,33 @@
   <p class="hint">Jede Gruppe belegt 4 DMX-Kanäle: R, G, B, Master-Dimmer. Kanal 1 = Gruppe 0 Rot.</p>
 </div>
 
+<div class="card">
+  <h2>Admin Zugriff</h2>
+  <label>Benutzer</label>
+  <input type="text" id="auth-user" value="admin">
+  <label>Aktuelles Passwort</label>
+  <input type="password" id="auth-current" placeholder="für geschützte Änderungen">
+  <label>Neues Passwort</label>
+  <input type="password" id="auth-new" placeholder="mind. 8 Zeichen">
+  <button onclick="saveAuth()" style="background:#2a2a2a;color:var(--text);border:1px solid var(--border)">Admin speichern</button>
+  <p class="hint" id="auth-state">Status wird geladen…</p>
+</div>
+
 <button onclick="save()">Speichern &amp; Neustart</button>
 <div id="msg"></div>
 
 <script>
 let _mode = 2;
+
+function authHeaders(extra={}, passOverride=null){
+  const u=document.getElementById('auth-user')?.value||sessionStorage.getItem('authUser')||'admin';
+  const p=passOverride ?? sessionStorage.getItem('authPass') ?? '';
+  return p?{...extra,Authorization:'Basic '+btoa(u+':'+p)}:extra;
+}
+function authFetch(url,opts={}, passOverride=null){
+  opts.headers=authHeaders(opts.headers||{}, passOverride);
+  return fetch(url,opts);
+}
 
 function setMode(m){
   _mode = m;
@@ -79,11 +101,45 @@ function setMode(m){
 
 async function loadCfg(){
   try{
-    const d = await (await fetch('/api/mode')).json();
+    const auth = await (await fetch('/api/auth')).json();
+    document.getElementById('auth-user').value = auth.user || 'admin';
+    document.getElementById('auth-state').textContent = auth.protected ? 'Admin-Passwort ist gesetzt' : 'Admin-Passwort muss gesetzt werden';
+
+    const r = await authFetch('/api/mode');
+    if(!r.ok) return;
+    const d = await r.json();
     setMode(d.mode||2);
     document.getElementById('an-univ').value = d.artnet?.univ||0;
     document.getElementById('an-grp').value  = d.artnet?.grp||3;
   }catch(e){}
+}
+
+async function saveAuth(){
+  const user=document.getElementById('auth-user').value||'admin';
+  const current=document.getElementById('auth-current').value;
+  const next=document.getElementById('auth-new').value;
+  if(next.length<8){
+    document.getElementById('auth-state').textContent='Passwort muss mindestens 8 Zeichen haben';
+    return;
+  }
+  try{
+    const headers={'Content-Type':'application/json'};
+    const currentUser=sessionStorage.getItem('authUser')||'admin';
+    if(current) headers.Authorization='Basic '+btoa(currentUser+':'+current);
+    const r=await fetch('/api/auth',{
+      method:'POST',
+      headers,
+      body:JSON.stringify({user,pass:next})
+    });
+    if(!r.ok) throw new Error(await r.text());
+    sessionStorage.setItem('authUser',user);
+    sessionStorage.setItem('authPass',next);
+    document.getElementById('auth-current').value='';
+    document.getElementById('auth-new').value='';
+    document.getElementById('auth-state').textContent='Admin-Passwort gespeichert';
+  }catch(e){
+    document.getElementById('auth-state').textContent='Auth Fehler: '+e.message;
+  }
 }
 
 async function save(){
@@ -95,7 +151,8 @@ async function save(){
     }
   };
   try{
-    await fetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await authFetch('/api/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(await r.text());
     document.getElementById('msg').textContent='✓ Gespeichert — Neustart läuft…';
   }catch(e){
     document.getElementById('msg').textContent='Fehler';

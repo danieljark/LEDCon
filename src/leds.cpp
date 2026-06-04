@@ -26,11 +26,21 @@ BootPhase g_bootPhase = BOOT_NO_NET;
 static uint32_t _netUpMs = 0;
 static bool _relayOn = true;
 
-// Art-Net direct pixel buffer (written by artnet.cpp, rendered by leds_loop)
-static RgbColor _artBuf[LED_MAX_COUNT];
+// Art-Net frame buffers. UDP callbacks never write the buffer being rendered.
+static RgbColor _artWriteBuf[LED_MAX_COUNT];
+static RgbColor _artActiveBuf[LED_MAX_COUNT];
+static RgbColor _artRenderBuf[LED_MAX_COUNT];
 static volatile bool _artDirty = false;
+static volatile bool _configDirty = false;
 static uint32_t _artNetLastPacket = 0;
+static bool _artNetTimedOut = true;
 static const uint32_t ARTNET_TIMEOUT_MS = 10000;
+static const uint32_t MODBUS_TIMEOUT_MS = 10000;
+static const uint32_t LED_FRAME_INTERVAL_MS = 10;
+static uint32_t _modbusLastWrite = 0;
+static bool _modbusWatchdogArmed = false;
+static bool _modbusTimedOut = false;
+static bool _normalRendered = false;
 
 static bool createBus(uint16_t count) {
     if (_bus) {
@@ -76,6 +86,21 @@ static float effectFactor(uint8_t fx, uint32_t ms) {
         case FX_PULSE_1HZ:  return breathe(ms, 1000u);
         case FX_CHASE:      return 1.0f;
         default:            return 1.0f;
+    }
+}
+
+static bool isAnimatedEffect(uint8_t fx) {
+    switch (fx) {
+        case FX_FLASH_FAST:
+        case FX_FLASH_SLOW:
+        case FX_PULSE_FAST:
+        case FX_PULSE_SLOW:
+        case FX_STROBE:
+        case FX_PULSE_1HZ:
+        case FX_CHASE:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -159,15 +184,32 @@ void leds_begin() {
 }
 
 void leds_applyConfig() {
-    _ledCount = min(g_cfg.strip.count, (uint16_t)LED_MAX_COUNT);
-    g_cfg.strip.count = _ledCount;
-    createBus(_ledCount);
-    memset(_artBuf, 0, sizeof(_artBuf));
-    _artDirty = false;
-    g_numSegs = g_cfg.numSegs;
+    portENTER_CRITICAL(&g_ledMux);
+    _configDirty = true;
+    portEXIT_CRITICAL(&g_ledMux);
 }
 
 void leds_loop() {
+    bool applyConfig = false;
+    portENTER_CRITICAL(&g_ledMux);
+    if (_configDirty) {
+        _configDirty = false;
+        applyConfig = true;
+    }
+    portEXIT_CRITICAL(&g_ledMux);
+
+    if (applyConfig) {
+        // Production-safe path: the LED bus is created only at boot.
+        g_cfg.strip.count = _ledCount;
+        memset(_artWriteBuf, 0, sizeof(_artWriteBuf));
+        memset(_artActiveBuf, 0, sizeof(_artActiveBuf));
+        memset(_artRenderBuf, 0, sizeof(_artRenderBuf));
+        _artDirty = false;
+        _artNetTimedOut = true;
+        g_numSegs = g_cfg.numSegs;
+        _normalRendered = false;
+    }
+
     if (!_bus) return;
 
     uint32_t ms = millis();
@@ -188,9 +230,12 @@ void leds_loop() {
             g_bootPhase = BOOT_DONE;
             memset(g_segs,  0, sizeof(g_segs));
             memset(g_pSegs, 0, sizeof(g_pSegs));
-            memset(_artBuf, 0, sizeof(_artBuf));
+            memset(_artWriteBuf, 0, sizeof(_artWriteBuf));
+            memset(_artActiveBuf, 0, sizeof(_artActiveBuf));
+            memset(_artRenderBuf, 0, sizeof(_artRenderBuf));
             _artDirty = false;
             g_pending = false;
+            _normalRendered = false;
             _bus->ClearTo(RgbColor(0));
             _bus->Show();
             Serial.println("[LED] Boot done — Modbus/UI control only");
@@ -210,22 +255,46 @@ void leds_loop() {
     if (g_cfg.mode == MODE_ARTNET) {
         uint32_t elapsed = ms - _artNetLastPacket;
         if (elapsed > ARTNET_TIMEOUT_MS) {
-            if (elapsed == ARTNET_TIMEOUT_MS) {
+            if (!_artNetTimedOut) {
                 Serial.printf("[LED] ArtNet timeout after %lums — clearing\n", elapsed);
+                portENTER_CRITICAL(&g_ledMux);
+                memset(_artWriteBuf, 0, sizeof(_artWriteBuf));
+                memset(_artActiveBuf, 0, sizeof(_artActiveBuf));
+                memset(_artRenderBuf, 0, sizeof(_artRenderBuf));
+                portEXIT_CRITICAL(&g_ledMux);
                 _bus->ClearTo(RgbColor(0));
                 _bus->Show();
+                _artDirty = false;
+                _artNetTimedOut = true;
             }
             return;
         }
         if (_artDirty) {
-            for (uint16_t i = 0; i < _ledCount; i++) _bus->SetPixelColor(i, _artBuf[i]);
-            _bus->Show();
+            portENTER_CRITICAL(&g_ledMux);
+            memcpy(_artRenderBuf, _artActiveBuf, sizeof(_artRenderBuf));
             _artDirty = false;
+            portEXIT_CRITICAL(&g_ledMux);
+            for (uint16_t i = 0; i < _ledCount; i++) _bus->SetPixelColor(i, _artRenderBuf[i]);
+            _bus->Show();
         }
         return;
     }
 
     // ── Normal operation (BOOT_DONE) ──────────────────────────────────────────
+    static uint32_t _lastFrameMs = 0;
+    if (ms - _lastFrameMs < LED_FRAME_INTERVAL_MS) return;
+    _lastFrameMs = ms;
+
+    if (_modbusWatchdogArmed && !_modbusTimedOut && (ms - _modbusLastWrite > MODBUS_TIMEOUT_MS)) {
+        portENTER_CRITICAL(&g_ledMux);
+        memset(g_pSegs, 0, sizeof(g_pSegs));
+        g_pGlobalEn = false;
+        g_pending = true;
+        portEXIT_CRITICAL(&g_ledMux);
+        _modbusTimedOut = true;
+        Serial.println("[LED] Modbus timeout — all LEDs off");
+    }
+
     if (g_pending) {
         portENTER_CRITICAL(&g_ledMux);
         memcpy(g_segs, g_pSegs, sizeof(g_segs));
@@ -233,25 +302,54 @@ void leds_loop() {
         g_globalBri = g_pGlobalBri;
         g_pending   = false;
         portEXIT_CRITICAL(&g_ledMux);
+        _normalRendered = false;
     }
+
+    bool needsFrame = !_normalRendered;
+    if (!needsFrame) {
+        for (uint8_t s = 0; s < g_numSegs && s < LED_MAX_SEGS; s++) {
+            if (g_segs[s].en && isAnimatedEffect(g_segs[s].fx)) {
+                needsFrame = true;
+                break;
+            }
+        }
+    }
+    if (!needsFrame) return;
 
     float gBri = g_globalEn ? (g_globalBri / 255.0f) : 0.0f;
     _bus->ClearTo(RgbColor(0));
     for (uint8_t s = 0; s < g_numSegs && s < LED_MAX_SEGS; s++) {
         if (!g_segs[s].en) continue;
-        paintSeg(g_segs[s], g_cfg.segs[s].start, g_cfg.segs[s].end, ms, gBri);
+        uint16_t start, end;
+        portENTER_CRITICAL(&g_ledMux);
+        start = g_cfg.segs[s].start;
+        end   = g_cfg.segs[s].end;
+        portEXIT_CRITICAL(&g_ledMux);
+        paintSeg(g_segs[s], start, end, ms, gBri);
     }
     _bus->Show();
+    _normalRendered = true;
 }
 
 // ── Thread-safe accessors ─────────────────────────────────────────────────────
 
 void leds_writeSeg(uint8_t seg, const SegState& s) {
-    if (seg >= LED_MAX_SEGS) return;
+    leds_patchSeg(seg, SEG_PATCH_ALL, s);
+}
+
+bool leds_patchSeg(uint8_t seg, uint8_t mask, const SegState& patch) {
+    if (seg >= LED_MAX_SEGS) return false;
     portENTER_CRITICAL(&g_ledMux);
-    g_pSegs[seg] = s;
+    SegState& s = g_pSegs[seg];
+    if (mask & SEG_PATCH_R)   s.r   = patch.r;
+    if (mask & SEG_PATCH_G)   s.g   = patch.g;
+    if (mask & SEG_PATCH_B)   s.b   = patch.b;
+    if (mask & SEG_PATCH_BRI) s.bri = patch.bri;
+    if (mask & SEG_PATCH_FX)  s.fx  = patch.fx;
+    if (mask & SEG_PATCH_EN)  s.en  = patch.en;
     g_pending    = true;
     portEXIT_CRITICAL(&g_ledMux);
+    return true;
 }
 
 void leds_writeGlobal(bool en, uint8_t bri) {
@@ -275,21 +373,36 @@ void leds_writeArtNetGroup(uint16_t start, uint16_t end, uint8_t r, uint8_t g, u
     if (start >= LED_MAX_COUNT) return;
     uint16_t lim = min(end, (uint16_t)(LED_MAX_COUNT - 1));
     if (start > lim) return;
-    for (uint16_t i = start; i <= lim; i++) _artBuf[i] = RgbColor(r, g, b);
+    portENTER_CRITICAL(&g_ledMux);
+    for (uint16_t i = start; i <= lim; i++) _artWriteBuf[i] = RgbColor(r, g, b);
+    portEXIT_CRITICAL(&g_ledMux);
 }
 
 void leds_clearArtNetBuffer(uint16_t start, uint16_t end) {
     if (start >= _ledCount) return;
     uint16_t lim = min(end, (uint16_t)(_ledCount - 1));
     if (start > lim) return;
-    for (uint16_t i = start; i <= lim; i++) _artBuf[i] = RgbColor(0);
+    portENTER_CRITICAL(&g_ledMux);
+    for (uint16_t i = start; i <= lim; i++) _artWriteBuf[i] = RgbColor(0);
+    portEXIT_CRITICAL(&g_ledMux);
 }
 
 void leds_flushArtNet() {
+    portENTER_CRITICAL(&g_ledMux);
+    memcpy(_artActiveBuf, _artWriteBuf, sizeof(_artActiveBuf));
     _artNetLastPacket = millis();
+    _artNetTimedOut = false;
     _artDirty = true;
+    portEXIT_CRITICAL(&g_ledMux);
 }
 
 void leds_artnetPulse() {
     _artNetLastPacket = millis();
+    _artNetTimedOut = false;
+}
+
+void leds_touchModbus() {
+    _modbusLastWrite = millis();
+    _modbusWatchdogArmed = true;
+    _modbusTimedOut = false;
 }

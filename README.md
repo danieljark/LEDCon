@@ -1,255 +1,373 @@
-# LEDCon v2.0
+# LEDCon
 
-Industrial LED segment controller firmware for the **Gledopto Elite 2D-EXMU** (ESP32-PoE / LAN8720 Ethernet). Controls WS2812B LED strips via Modbus TCP, Art-Net DMX, or a REST Web API — selectable at runtime.
+Industrieller ESP32 LED-Controller fuer WS2812B/NeoPixel-Installationen auf dem
+**Gledopto Elite 2D-EXMU**. Die Firmware steuert segmentierte LED-Streifen ueber
+**Modbus TCP**, **Art-Net** oder eine lokale **Weboberflaeche / REST API**.
+
+Der Fokus liegt auf stabiler Dauerlauf-Nutzung: Modbus TCP ist der Standardmodus,
+statische LED-Zustaende werden nicht unnoetig neu gerendert, Schreibvorgaenge
+werden validiert und bei Modbus-Ausfall werden LEDs sicher ausgeschaltet.
+
+![PlatformIO](https://img.shields.io/badge/Build-PlatformIO-f5822a)
+![ESP32](https://img.shields.io/badge/MCU-ESP32-222)
+![Modbus TCP](https://img.shields.io/badge/Default-Modbus%20TCP-d6a93a)
+![Filesystem](https://img.shields.io/badge/FS-LittleFS-4fc3f7)
+
+---
+
+## Vorschau
+
+| Dashboard | Einstellungen |
+|---|---|
+| ![LEDCon Dashboard](docs/screenshots/dashboard.svg) | ![LEDCon Einstellungen](docs/screenshots/settings.svg) |
+
+Die SVGs sind Repo-Previews der Weboberflaeche. Echte Live-Ansichten kommen aus
+dem LittleFS-Webinterface auf dem Controller.
+
+---
+
+## Kernfunktionen
+
+- **Modbus TCP als Primaermodus**
+- **Art-Net / DMX over UDP** fuer RGB-Dimmer-Gruppen
+- **Web API Modus** fuer segmentbasierte REST-Steuerung
+- **8 konfigurierbare LED-Segmente**
+- **Bis 300 WS2812B LEDs** ueber RMT-Ausgabe
+- **Boot-Animation bleibt aktiv**
+- **Ethernet ueber LAN8720** mit DHCP oder statischer IP
+- **WPA2 Access Point** als Fallback-Konfiguration
+- **Admin-Authentifizierung** fuer geschuetzte API-Endpunkte
+- **OTA Firmware Upload** ueber Weboberflaeche
+- **LittleFS Web UI** fuer Dashboard, Netzwerk, LEDs, Einstellungen und Hilfe
+- **Fail-Off Verhalten im Modbus-Modus** per Watchdog/Heartbeat
 
 ---
 
 ## Hardware
 
-| Component | Details |
+| Bauteil | Wert |
 |---|---|
-| Board | Gledopto Elite 2D-EXMU (GL-C-618WL) |
-| MCU | ESP32 240 MHz |
-| Ethernet | LAN8720 RMII (PoE capable) |
-| LED output | GPIO16 (WS2812B, up to 300 px) |
-| Relay | GPIO18 — switches LED strip power supply |
-| ETH PHY power | GPIO5 |
-| ETH clock | GPIO0 (external 50 MHz from LAN8720) |
-| ETH MDC/MDIO | GPIO23 / GPIO33 |
+| Board | Gledopto Elite 2D-EXMU / GL-C-618WL |
+| MCU | ESP32, 240 MHz |
+| Ethernet | LAN8720 RMII, PoE-faehig |
+| LED-Ausgang | GPIO16 |
+| LED-Typ | WS2812B / NeoPixel |
+| LED-Maximum | 300 Pixel |
+| Relais | GPIO18, LED-Netzteil ein/aus |
+| ETH PHY Power | GPIO5 |
+| ETH Clock | GPIO0, externer 50 MHz LAN8720-Takt |
+| ETH MDC / MDIO | GPIO23 / GPIO33 |
+
+Empfohlene Verdrahtung fuer stabile LED-Ausgabe:
+
+- Gemeinsame Masse zwischen ESP32, LED-Netzteil und LED-Streifen.
+- 330 bis 470 Ohm Serienwiderstand in der Datenleitung nahe am Controller.
+- Grosser Elko am LED-Streifen, z. B. 1000 uF, passend zur Versorgungsspannung.
+- Saubere 5 V Versorgung mit ausreichender Stromreserve.
+- Bei langen Leitungen Pegelwandler 3,3 V auf 5 V verwenden.
 
 ---
 
-## Features
+## Schnellstart
 
-- **Three selectable control protocols** — only one active at a time
-  - **Modbus TCP** — industrial standard, FC03/06/16, up to 4 connections
-  - **Art-Net** (DMX over UDP) — 4 channels per pixel group: R, G, B, Master-Dimmer
-  - **Web API** — REST/JSON, alarm-lamp style segment control
-- **Ethernet (DHCP or static)** + **WiFi Access Point** fallback
-- **8 configurable LED segments** with start/end positions
-- **8 LED effects** per segment (Static, Flash, Pulse, Strobe, Chase)
-- **Boot indicator** — orange blink (no network) → blue pulse 10 s (connected) → off
-- **Relay control** (GPIO18) via UI or API — persisted in config
-- **OTA firmware update** via Web UI
-- **Web UI auto-reset** after 5 minutes of inactivity (temporary test mode)
-- **LittleFS** filesystem for HTML pages and config.json
-- **Wokwi simulation** support (WiFi fallback, GPIO4)
+### Voraussetzungen
 
----
+- PlatformIO CLI oder PlatformIO VSCode Extension
+- USB-C/USB-Serial Verbindung zum Controller
+- CH340/CH34x Treiber, falls der Adapter diesen Chip nutzt
 
-## Building & Flashing
-
-### Requirements
-
-- [PlatformIO](https://platformio.org/) (CLI or VSCode extension)
-- USB-to-Serial adapter connected to the Gledopto board
-- CH340 driver installed (macOS: `brew install --cask wch-ch34x-usb-serial-driver`)
-
-### First-time Flash
+### Firmware bauen und flashen
 
 ```bash
-# Build and flash firmware
+pio run -e ledcon_hw
 pio run -e ledcon_hw -t upload
-
-# Flash filesystem (HTML pages)
 pio run -e ledcon_hw -t uploadfs
+```
 
-# Open serial monitor
+### Seriellen Monitor oeffnen
+
+```bash
 pio device monitor -e ledcon_hw
 ```
 
-### Board in Bootloader Mode
-
-Hold **BOOT**, press **RESET**, release **BOOT** — then run the upload command.
-
-### Wokwi Simulation
-
-```bash
-pio run -e ledcon_wokwi -t upload
-```
-
-Uses WiFi (WLAN "Wokwi-GUEST"), LED on GPIO4, no Ethernet.
+Falls der Upload nicht startet: **BOOT** halten, **RESET** kurz druecken,
+**BOOT** loslassen und den Upload erneut starten.
 
 ---
 
-## Network Configuration
+## Erstinbetriebnahme
 
-### Default Settings
-
-| Parameter | Value |
+| Einstellung | Standard |
 |---|---|
-| Ethernet IP | `192.168.10.10` (static) |
-| Subnet | `255.255.255.0` |
+| Modus | Modbus TCP |
+| Ethernet IP | `192.168.10.10` |
+| Subnetz | `255.255.255.0` |
 | Gateway | `192.168.10.1` |
-| WiFi AP | `LEDcon` (open, no password) |
+| Access Point | `LEDcon` |
+| AP Passwort | `LEDcon-Setup` |
 | AP IP | `192.168.10.1` |
+| Web UI | `http://192.168.10.10` oder `http://192.168.10.1` |
+| Admin Benutzer | `admin` |
+| Admin Passwort | Muss beim ersten Setup gesetzt werden |
 
-Change via Web UI → **Netzwerk** or `POST /api/net`.
+Ablauf:
 
-### First Access
-
-1. Connect a network cable — board gets `192.168.10.10`
-2. Or connect to WiFi **"LEDcon"** → `http://192.168.10.1`
-3. Set DHCP / static IP in the Web UI if needed
+1. Controller per Ethernet verbinden oder mit dem AP `LEDcon` verbinden.
+2. Web UI oeffnen.
+3. Unter **Einstellungen** ein Admin-Passwort setzen.
+4. Unter **Netzwerk** DHCP oder statische IP konfigurieren.
+5. Unter **LED Setup** LED-Anzahl und Segmente pruefen.
+6. Nach Aenderungen an Netzwerk/LED Setup startet der Controller neu.
 
 ---
 
-## Web UI
+## Stabilitaet im Dauerbetrieb
 
-| Page | URL | Description |
+Diese Punkte sind im aktuellen Code umgesetzt:
+
+| Bereich | Umsetzung |
+|---|---|
+| Modbus Schreibstabilitaet | FC16 Multi-Register-Updates werden erst validiert und dann atomar in den LED-State uebernommen. |
+| Modbus Fail-Off | Register `3` dient als Heartbeat. Ohne gueltigen Schreibzugriff fuer ca. 10 s werden alle LEDs ausgeschaltet. |
+| Ungueltige Register | Nicht beschreibbare oder reservierte Register liefern Modbus-Exceptions statt Seiteneffekte. |
+| LED-Flackern durch Teilupdates | Art-Net nutzt getrennte Schreib-/Render-Puffer. |
+| Statische Performance | Statische Segmente werden nur bei Zustandsaenderung neu gerendert. |
+| Konfigurationsschutz | Config wird ueber Temp-Datei und Backup geschrieben. |
+| Segment-Sicherheit | Ueberlappende oder ausserhalb liegende Segmente werden abgewiesen bzw. beim Boot bereinigt. |
+| Live-Rekonfiguration | LED-Anzahl/Segmentlayout wird gespeichert und danach per Neustart sauber angewendet. |
+
+Wichtig fuer SPS/Modbus:
+
+- Die SPS sollte Register `3` zyklisch schreiben, z. B. alle 1 bis 5 Sekunden.
+- Alternativ reicht auch ein anderer gueltiger Schreibzugriff innerhalb des Zeitfensters.
+- Wenn die SPS ausfaellt oder die Verbindung logisch haengt, gehen die LEDs nach ca. 10 s aus.
+
+---
+
+## Weboberflaeche
+
+| Seite | Pfad | Zweck |
 |---|---|---|
-| Dashboard | `/` | Protocol status, global control, segment cards |
-| Netzwerk | `/net.html` | IP config, DHCP, AP settings |
-| LED Setup | `/leds.html` | LED count, segment positions |
-| Einstellungen | `/settings.html` | Protocol selection, Art-Net config |
-| Hilfe | `/help.html` | Full API reference, register tables, OTA update |
+| Dashboard | `/` | Status, Globalsteuerung, Segmente, Test-Override |
+| Netzwerk | `/net.html` | Ethernet, WiFi Client, Access Point, Modbus Port |
+| LED Setup | `/leds.html` | LED-Anzahl und Segmentbereiche |
+| Einstellungen | `/settings.html` | Modus, Art-Net Konfiguration, Admin-Passwort |
+| Hilfe | `/help.html` | API, Modbus-Tabelle, Art-Net, OTA Upload |
+
+Geschuetzte Aktionen benoetigen Basic Auth. Die Weboberflaeche speichert die
+Zugangsdaten nur in der Browser-Session.
 
 ---
 
 ## Modbus TCP
 
-| Parameter | Value |
+| Parameter | Wert |
 |---|---|
-| Port | 502 |
-| Unit-ID | 1 |
-| Function Codes | FC03 (read), FC06 (write single), FC16 (write multiple) |
+| Port | `502` |
+| Unit ID | `1` |
+| Function Codes | FC03, FC06, FC16 |
+| Max. Read Count | 125 Register |
+| Max. Write Count | 64 Register |
 
-### Register Map
+### Register
 
-| Register | Name | Range | R/W |
+| Register | Name | Bereich | Zugriff |
 |---|---|---|---|
-| 0 | Global Enable | 0=OFF, 1=ON | R/W |
-| 1 | Global Brightness | 0–255 | R/W |
-| 2 | Number of Segments | 1–8 | R |
-| 10+n×10 | Segment n — Red | 0–255 | R/W |
-| 11+n×10 | Segment n — Green | 0–255 | R/W |
-| 12+n×10 | Segment n — Blue | 0–255 | R/W |
-| 13+n×10 | Segment n — Brightness | 0–255 | R/W |
-| 14+n×10 | Segment n — Effect | 0–8 | R/W |
-| 15+n×10 | Segment n — Enabled | 0/1 | R/W |
+| 0 | Global Enable | 0/1 | R/W |
+| 1 | Global Brightness | 0-255 | R/W |
+| 2 | Anzahl Segmente | 1-8 | R |
+| 3 | Heartbeat / Watchdog Kick | beliebiger Wert | W |
+| 10 + n x 10 | Segment n Rot | 0-255 | R/W |
+| 11 + n x 10 | Segment n Gruen | 0-255 | R/W |
+| 12 + n x 10 | Segment n Blau | 0-255 | R/W |
+| 13 + n x 10 | Segment n Helligkeit | 0-255 | R/W |
+| 14 + n x 10 | Segment n Effekt | 0-8 | R/W |
+| 15 + n x 10 | Segment n Aktiv | 0/1 | R/W |
 
-**Segments 0–7** use base addresses 10, 20, 30, 40, 50, 60, 70, 80.
+Segment-Basisadressen:
 
-**Effects:** `0`=Off `1`=Static `2`=Flash 4Hz `3`=Flash 0.5Hz `4`=Pulse 2Hz `5`=Pulse 0.33Hz `6`=Strobe 20Hz `7`=Pulse 1Hz `8`=Chase
+| Segment | Basis |
+|---|---|
+| 0 | 10 |
+| 1 | 20 |
+| 2 | 30 |
+| 3 | 40 |
+| 4 | 50 |
+| 5 | 60 |
+| 6 | 70 |
+| 7 | 80 |
 
+Effekte:
+
+| Wert | Effekt |
+|---|---|
+| 0 | Aus |
+| 1 | Statisch |
+| 2 | Flash schnell |
+| 3 | Flash langsam |
+| 4 | Pulse schnell |
+| 5 | Pulse langsam |
+| 6 | Strobe |
+| 7 | Pulse mittel |
+| 8 | Chase |
+
+Beispiel: Segment 0 statisch rot setzen.
+
+```text
+FC16
+Adresse: 10
+Anzahl:  6
+Daten:   255, 0, 0, 200, 1, 1
 ```
-# Example: Set segment 0 to solid red
-FC16  Addr=10  Count=6  Data: 255, 0, 0, 200, 1, 1
+
+Heartbeat-Beispiel:
+
+```text
+FC06
+Adresse: 3
+Wert:    1
+Intervall: 1-5 s
 ```
 
 ---
 
 ## Art-Net
 
-| Parameter | Value |
+| Parameter | Wert |
 |---|---|
-| UDP Port | 6454 |
-| Channels per group | 4 (R, G, B, Master-Dimmer) |
-| Universe | Configurable (default: 0) |
-| Group size | Configurable LEDs per group (default: 3) |
+| UDP Port | `6454` |
+| Universe | konfigurierbar, Standard `0` |
+| Gruppengroesse | konfigurierbar, Standard `3` LEDs |
+| Kanaele pro Gruppe | 4 |
 
-Dimmer channel: `0` = off, `255` = full brightness.  
-Final color = RGB × (Dimmer ÷ 255).
+Kanalbelegung pro Gruppe:
 
-**Channel mapping (groupSize=3, 50 LEDs):**
+| Kanal | Funktion |
+|---|---|
+| 1 | Rot |
+| 2 | Gruen |
+| 3 | Blau |
+| 4 | Master-Dimmer |
 
-| Group | DMX Channels | LEDs |
-|---|---|---|
-| 0 | 1–4 (R,G,B,Dim) | 0–2 |
-| 1 | 5–8 | 3–5 |
-| n | n×4+1 … n×4+4 | n×grp … |
-
-Configure in Web UI → **Einstellungen**.
+Der Dimmer skaliert die RGB-Werte: `0` ist aus, `255` ist volle Helligkeit.
 
 ---
 
 ## REST API
 
-Base URL: `http://192.168.10.10`
+Basis-URL im Standardnetz:
 
-| Method | Endpoint | Description |
+```text
+http://192.168.10.10
+```
+
+| Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/status` | Current status (IP, mode, relay, segments) |
-| GET | `/api/cfg` | Full configuration |
-| POST | `/api/seg?n=0` | Set segment n `{"r":255,"g":0,"b":0,"bri":200,"fx":1,"en":true}` |
-| POST | `/api/global` | Global control `{"en":true,"bri":200}` |
-| POST | `/api/relay` | Relay `{"on":true}` |
-| POST | `/api/mode` | Switch protocol `{"mode":0}` (0=WebAPI, 1=ArtNet, 2=Modbus) |
-| POST | `/api/net` | Save network config (triggers restart) |
-| POST | `/update` | OTA firmware upload (multipart, field `firmware`) |
+| GET | `/api/status` | Status, IP, Uptime, Heap, Modus, Segmente |
+| GET | `/api/cfg` | Vollstaendige Konfiguration, geschuetzt |
+| POST | `/api/auth` | Admin-Benutzer/Passwort setzen |
+| POST | `/api/seg?n=0` | Segment patchen, geschuetzt |
+| POST | `/api/global` | Global Enable/Helligkeit setzen, geschuetzt |
+| POST | `/api/relay` | Relais schalten, geschuetzt |
+| POST | `/api/mode` | Modus wechseln, geschuetzt, Neustart |
+| POST | `/api/net` | Netzwerk speichern, geschuetzt, Neustart |
+| POST | `/api/leds` | LED Setup speichern, geschuetzt, Neustart |
+| POST | `/update` | OTA Firmware Upload, geschuetzt |
+
+Beispiel:
+
+```bash
+curl -u admin:PASSWORT \
+  -H 'Content-Type: application/json' \
+  -X POST 'http://192.168.10.10/api/seg?n=0' \
+  -d '{"r":255,"g":0,"b":0,"bri":200,"fx":1,"en":true}'
+```
 
 ---
 
 ## OTA Update
 
-1. Open `http://192.168.10.10/help.html` → **OTA Update** tab
-2. Select `.pio/build/ledcon_hw/firmware.bin`
-3. Click **Firmware hochladen**
-4. Board restarts automatically after successful upload
+1. Firmware bauen: `pio run -e ledcon_hw`
+2. Web UI oeffnen.
+3. Hilfe-Seite aufrufen.
+4. OTA Upload auswaehlen.
+5. Datei `.pio/build/ledcon_hw/firmware.bin` hochladen.
+
+Nach Web UI Aenderungen muss das LittleFS ebenfalls aktualisiert werden:
+
+```bash
+pio run -e ledcon_hw -t uploadfs
+```
 
 ---
 
-## Project Structure
+## Projektstruktur
 
-```
+```text
 LEDCon/
+├── data/
+│   ├── help.html
+│   ├── index.html
+│   ├── leds.html
+│   ├── net.html
+│   └── settings.html
+├── docs/
+│   └── screenshots/
 ├── src/
-│   ├── main.cpp          # Setup, loop, protocol dispatch
-│   ├── config.h/cpp      # Config struct, LittleFS JSON load/save
-│   ├── net.h/cpp         # Ethernet (LAN8720) + WiFi AP
-│   ├── leds.h/cpp        # NeoPixelBus driver, boot animation, Art-Net buffer
-│   ├── artnet.h/cpp      # Art-Net UDP receiver
-│   ├── modbus.h/cpp      # Modbus TCP server (eModbus)
-│   ├── webui.h/cpp       # AsyncWebServer, REST API, OTA
-├── data/                 # LittleFS web pages
-│   ├── index.html        # Dashboard
-│   ├── net.html          # Network settings
-│   ├── leds.html         # LED setup
-│   ├── settings.html     # Protocol selection, Art-Net config
-│   └── help.html         # API docs, Modbus register table, OTA
-├── platformio.ini        # Build environments (ledcon_hw, ledcon_wokwi)
-├── diagram.json          # Wokwi circuit diagram
-└── wokwi.toml            # Wokwi simulator config
+│   ├── artnet.cpp / artnet.h
+│   ├── config.cpp / config.h
+│   ├── leds.cpp / leds.h
+│   ├── main.cpp
+│   ├── modbus.cpp / modbus.h
+│   ├── net.cpp / net.h
+│   └── webui.cpp / webui.h
+├── platformio.ini
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## Dependencies
+## Abhaengigkeiten
 
-| Library | Version | Purpose |
-|---|---|---|
-| `makuna/NeoPixelBus` | ^2.7 | WS2812B LED driver (RMT) |
-| `me-no-dev/AsyncTCP` | ^1.1 | Async TCP base |
-| `mathieucarbou/ESP Async WebServer` | ^3 | HTTP server |
-| `bblanchon/ArduinoJson` | ^7 | JSON serialization |
-| `miq19/eModbus` | latest | Modbus TCP server |
+| Library | Zweck |
+|---|---|
+| `makuna/NeoPixelBus` | WS2812B LED-Ausgabe ueber ESP32 RMT |
+| `me-no-dev/AsyncTCP` | TCP Basis fuer Async WebServer und Modbus |
+| `mathieucarbou/ESP Async WebServer` | Web UI, REST API, OTA Upload |
+| `bblanchon/ArduinoJson` | JSON Config/API |
+| `miq19/eModbus` | Modbus TCP Server |
 
 ---
 
 ## Build Flags
 
-| Flag | Default | Description |
+| Flag | Standard | Beschreibung |
 |---|---|---|
-| `LED_DATA_PIN` | 16 (hw) / 4 (sim) | LED data GPIO |
-| `LED_MAX_SEGS` | 8 | Maximum segments |
-| `LED_MAX_COUNT` | 300 | Maximum LED pixels |
-| `LED_DEFAULT_COUNT` | 50 | Default pixel count |
-| `MODBUS_PORT` | 502 | Modbus TCP port |
-| `LEDCON_VERSION` | 2.0.0 | Firmware version string |
-| `WOKWI_SIM` | — | Enable simulation mode (WiFi only) |
+| `LED_DATA_PIN` | `16` | LED-Datenpin |
+| `LED_MAX_SEGS` | `8` | Maximale Segmentanzahl |
+| `LED_MAX_COUNT` | `300` | Maximale LED-Anzahl |
+| `LED_DEFAULT_COUNT` | `50` | Standard LED-Anzahl |
+| `MODBUS_PORT` | `502` | Standard Modbus TCP Port |
+| `LEDCON_VERSION` | `2.0.0` | Firmware-Version |
+| `USE_ETH` | `1` | Ethernet aktiv |
 
 ---
 
-## Boot Sequence
+## Oeffentliches Repository
 
-1. **Orange blink** — waiting for Ethernet link
-2. **Blue slow pulse** (1 Hz, 10 s) — network connected, servers starting
-3. **All LEDs off** — normal operation, waiting for Modbus/Art-Net/API commands
+Diese Dateien gehoeren nicht ins oeffentliche Repo und sind per `.gitignore`
+ausgeschlossen:
 
-Relay (GPIO18) is set based on saved config at power-on (default: ON).
+- PlatformIO Build-Artefakte wie `.pio/`, `*.bin`, `*.elf`, `*.map`
+- lokale VSCode-/IDE-Dateien
+- lokale Secrets wie `.env`, `secrets.h`
+- lokale LittleFS-Konfigurationsdateien mit WLAN-/Admin-Daten: `data/config.json`,
+  `data/config.bak`, `data/config.tmp`
 
----
+Vor einer Veroeffentlichung trotzdem pruefen:
 
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
+```bash
+git status --short
+rg -n "(password|token|secret|ssid|pass|key)" .
+```

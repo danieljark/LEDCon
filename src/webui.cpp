@@ -7,6 +7,7 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <mbedtls/base64.h>
 
 static AsyncWebServer _srv(80);
 
@@ -16,12 +17,59 @@ static uint32_t _statusCacheTime = 0;
 #define STATUS_CACHE_MS 100
 
 // ── Auth helper ──────────────────────────────────────────────────────────────
-#define REQUIRE_AUTH(req) do { \
-    if (g_cfg.auth.password[0] != '\0' && !req->authenticate(g_cfg.auth.username, g_cfg.auth.password)) { \
-        req->send(401, "text/plain", "Unauthorized"); \
-        return; \
-    } \
-} while(0)
+static bool constantTimeEqual(const char* a, const char* b) {
+    if (!a || !b) return false;
+    size_t la = strlen(a), lb = strlen(b);
+    uint8_t diff = (uint8_t)(la ^ lb);
+    size_t n = max(la, lb);
+    for (size_t i = 0; i < n; i++) {
+        char ca = (i < la) ? a[i] : 0;
+        char cb = (i < lb) ? b[i] : 0;
+        diff |= (uint8_t)(ca ^ cb);
+    }
+    return diff == 0;
+}
+
+static bool requestHasValidAuth(AsyncWebServerRequest* req) {
+    if (!config_authConfigured()) return false;
+    if (!req->hasHeader("Authorization")) return false;
+
+    String header = req->header("Authorization");
+    if (!header.startsWith("Basic ")) return false;
+
+    String encoded = header.substring(6);
+    uint8_t decoded[100];
+    size_t decodedLen = 0;
+    int rc = mbedtls_base64_decode(decoded, sizeof(decoded) - 1, &decodedLen,
+                                   (const unsigned char*)encoded.c_str(), encoded.length());
+    if (rc != 0 || decodedLen == 0 || decodedLen >= sizeof(decoded)) return false;
+    decoded[decodedLen] = '\0';
+
+    char* sep = strchr((char*)decoded, ':');
+    if (!sep) return false;
+    *sep = '\0';
+    const char* user = (const char*)decoded;
+    const char* pass = sep + 1;
+
+    char hash[65];
+    if (!config_hashPassword(pass, hash)) return false;
+    return strcmp(user, g_cfg.auth.username) == 0 &&
+           constantTimeEqual(hash, g_cfg.auth.passwordHash);
+}
+
+static bool requireAuth(AsyncWebServerRequest* req) {
+    if (!config_authConfigured()) {
+        req->send(403, "text/plain", "Admin password required. Set it via /api/auth first.");
+        return false;
+    }
+    if (!requestHasValidAuth(req)) {
+        req->requestAuthentication();
+        return false;
+    }
+    return true;
+}
+
+#define REQUIRE_AUTH(req) do { if (!requireAuth(req)) return; } while(0)
 
 // ── /api/status ──────────────────────────────────────────────────────────────
 static void handleStatus(AsyncWebServerRequest* req) {
@@ -46,7 +94,7 @@ static void handleStatus(AsyncWebServerRequest* req) {
         doc["mbport"]  = g_cfg.net.modbusPort;
 
         JsonArray segs = doc["seg"].to<JsonArray>();
-        for (uint8_t i = 0; i < g_numSegs; i++) {
+        for (uint8_t i = 0; i < g_numSegs && i < LED_MAX_SEGS; i++) {
             JsonObject s = segs.add<JsonObject>();
             SegState st  = leds_readSeg(i);
             s["r"]  = st.r; s["g"] = st.g; s["b"] = st.b;
@@ -75,14 +123,16 @@ static void handleSegPost(AsyncWebServerRequest* req, uint8_t* data, size_t len,
         return;
     }
 
-    SegState s = leds_readSeg(idx);
-    if (doc["r"].is<int>())   s.r   = (uint8_t)doc["r"].as<int>();
-    if (doc["g"].is<int>())   s.g   = (uint8_t)doc["g"].as<int>();
-    if (doc["b"].is<int>())   s.b   = (uint8_t)doc["b"].as<int>();
-    if (doc["bri"].is<int>()) s.bri = (uint8_t)doc["bri"].as<int>();
-    if (doc["fx"].is<int>())  s.fx  = (uint8_t)doc["fx"].as<int>();
-    if (doc["en"].is<bool>()) s.en  = doc["en"].as<bool>();
-    leds_writeSeg(idx, s);
+    SegState patch{};
+    uint8_t mask = 0;
+    if (doc["r"].is<int>())   { patch.r   = (uint8_t)constrain(doc["r"].as<int>(),   0, 255); mask |= SEG_PATCH_R; }
+    if (doc["g"].is<int>())   { patch.g   = (uint8_t)constrain(doc["g"].as<int>(),   0, 255); mask |= SEG_PATCH_G; }
+    if (doc["b"].is<int>())   { patch.b   = (uint8_t)constrain(doc["b"].as<int>(),   0, 255); mask |= SEG_PATCH_B; }
+    if (doc["bri"].is<int>()) { patch.bri = (uint8_t)constrain(doc["bri"].as<int>(), 0, 255); mask |= SEG_PATCH_BRI; }
+    if (doc["fx"].is<int>())  { patch.fx  = (uint8_t)constrain(doc["fx"].as<int>(),  0, 8);   mask |= SEG_PATCH_FX; }
+    if (doc["en"].is<bool>()) { patch.en  = doc["en"].as<bool>();                         mask |= SEG_PATCH_EN; }
+    if (mask == 0) { req->send(400, "text/plain", "no segment fields"); return; }
+    leds_patchSeg(idx, mask, patch);
     req->send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -98,8 +148,12 @@ static void handleGlobalPost(AsyncWebServerRequest* req, uint8_t* data, size_t l
         req->send(400, "text/plain", err.c_str());
         return;
     }
-    bool    en  = doc["en"]  | g_globalEn;
-    uint8_t bri = doc["bri"] | g_globalBri;
+    portENTER_CRITICAL(&g_ledMux);
+    bool currentEn = g_pGlobalEn;
+    uint8_t currentBri = g_pGlobalBri;
+    portEXIT_CRITICAL(&g_ledMux);
+    bool    en  = doc["en"]  | currentEn;
+    uint8_t bri = doc["bri"].is<int>() ? (uint8_t)constrain(doc["bri"].as<int>(), 0, 255) : currentBri;
     leds_writeGlobal(en, bri);
     req->send(200, "application/json", "{\"ok\":true}");
 }
@@ -123,9 +177,17 @@ static void handleNetPost(AsyncWebServerRequest* req, uint8_t* data, size_t len,
     strlcpy(g_cfg.net.wifiSsid, doc["ssid"]  | g_cfg.net.wifiSsid, 33);
     strlcpy(g_cfg.net.wifiPass, doc["pass"]  | g_cfg.net.wifiPass, 65);
     strlcpy(g_cfg.net.apSsid,   doc["ap"]    | g_cfg.net.apSsid,   33);
+    if (doc["apPass"].is<const char*>()) {
+        const char* apPass = doc["apPass"].as<const char*>();
+        if (strlen(apPass) < 8 || strlen(apPass) > 64) {
+            req->send(400, "text/plain", "AP password must be 8-64 chars");
+            return;
+        }
+        strlcpy(g_cfg.net.apPass, apPass, sizeof(g_cfg.net.apPass));
+    }
     g_cfg.net.apEnabled  = doc["apEn"]   | g_cfg.net.apEnabled;
     g_cfg.net.modbusPort = doc["mbport"] | g_cfg.net.modbusPort;
-    config_save();
+    config_save(true);
     req->send(200, "application/json", "{\"ok\":true,\"restart\":true}");
     delay(500);
     ESP.restart();
@@ -144,19 +206,37 @@ static void handleLedsPost(AsyncWebServerRequest* req, uint8_t* data, size_t len
         return;
     }
 
+    uint8_t newPin = g_cfg.strip.pin;
+    uint16_t newCount = g_cfg.strip.count;
+    uint8_t newBriMax = g_cfg.strip.briMax;
+    char newType[sizeof(g_cfg.strip.type)];
+    char newOrder[sizeof(g_cfg.strip.order)];
+    strlcpy(newType, g_cfg.strip.type, sizeof(newType));
+    strlcpy(newOrder, g_cfg.strip.order, sizeof(newOrder));
+
     JsonObject strip = doc["strip"];
     if (!strip.isNull()) {
-        g_cfg.strip.pin    = strip["pin"]    | g_cfg.strip.pin;
-        g_cfg.strip.count  = strip["count"]  | g_cfg.strip.count;
-        g_cfg.strip.briMax = strip["briMax"] | g_cfg.strip.briMax;
-        if (g_cfg.strip.count > LED_MAX_COUNT) g_cfg.strip.count = LED_MAX_COUNT;
+        newPin    = strip["pin"]    | newPin;
+        newCount  = strip["count"]  | newCount;
+        newBriMax = strip["briMax"] | newBriMax;
+        strlcpy(newType,  strip["type"]  | newType,  sizeof(newType));
+        strlcpy(newOrder, strip["order"] | newOrder, sizeof(newOrder));
+        if (newCount < 1) newCount = 1;
+        if (newCount > LED_MAX_COUNT) newCount = LED_MAX_COUNT;
     }
+
+    SegCfg newSegs[LED_MAX_SEGS];
+    memcpy(newSegs, g_cfg.segs, sizeof(newSegs));
+    uint8_t newNumSegs = g_cfg.numSegs;
+    bool usedLeds[LED_MAX_COUNT];
+    memset(usedLeds, 0, sizeof(usedLeds));
+
     JsonArray segs = doc["segs"].as<JsonArray>();
     if (!segs.isNull()) {
-        g_cfg.numSegs = 0;
-        uint16_t maxLed = (g_cfg.strip.count > 0) ? (g_cfg.strip.count - 1) : 0;
+        newNumSegs = 0;
+        uint16_t maxLed = (newCount > 0) ? (newCount - 1) : 0;
         for (JsonObject s : segs) {
-            if (g_cfg.numSegs >= LED_MAX_SEGS) break;
+            if (newNumSegs >= LED_MAX_SEGS) break;
             uint16_t start = s["s"] | 0;
             uint16_t end   = s["e"] | 0;
             if (start > maxLed) start = maxLed;
@@ -166,14 +246,51 @@ static void handleLedsPost(AsyncWebServerRequest* req, uint8_t* data, size_t len
                 start = end;
                 end = tmp;
             }
-            g_cfg.segs[g_cfg.numSegs].start = start;
-            g_cfg.segs[g_cfg.numSegs].end   = end;
-            g_cfg.numSegs++;
+            for (uint16_t led = start; led <= end; led++) {
+                if (usedLeds[led]) {
+                    req->send(400, "text/plain", "segments must not overlap");
+                    return;
+                }
+                usedLeds[led] = true;
+            }
+            newSegs[newNumSegs].start = start;
+            newSegs[newNumSegs].end   = end;
+            newNumSegs++;
+        }
+    } else {
+        uint16_t maxLed = (newCount > 0) ? (newCount - 1) : 0;
+        for (uint8_t i = 0; i < newNumSegs && i < LED_MAX_SEGS; i++) {
+            if (newSegs[i].start > maxLed) newSegs[i].start = maxLed;
+            if (newSegs[i].end > maxLed) newSegs[i].end = maxLed;
+            if (newSegs[i].end < newSegs[i].start) {
+                uint16_t tmp = newSegs[i].start;
+                newSegs[i].start = newSegs[i].end;
+                newSegs[i].end = tmp;
+            }
+            for (uint16_t led = newSegs[i].start; led <= newSegs[i].end; led++) {
+                if (usedLeds[led]) {
+                    req->send(400, "text/plain", "segments must not overlap");
+                    return;
+                }
+                usedLeds[led] = true;
+            }
         }
     }
-    config_save();
-    leds_applyConfig();
-    req->send(200, "application/json", "{\"ok\":true}");
+
+    portENTER_CRITICAL(&g_ledMux);
+    g_cfg.strip.pin = newPin;
+    g_cfg.strip.count = newCount;
+    g_cfg.strip.briMax = newBriMax;
+    strlcpy(g_cfg.strip.type, newType, sizeof(g_cfg.strip.type));
+    strlcpy(g_cfg.strip.order, newOrder, sizeof(g_cfg.strip.order));
+    memcpy(g_cfg.segs, newSegs, sizeof(g_cfg.segs));
+    g_cfg.numSegs = newNumSegs;
+    portEXIT_CRITICAL(&g_ledMux);
+
+    config_save(true);
+    req->send(200, "application/json", "{\"ok\":true,\"restart\":true}");
+    delay(300);
+    ESP.restart();
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -205,6 +322,8 @@ void webui_begin() {
 
     // /api/cfg — read current config as JSON
     _srv.on("/api/cfg", HTTP_GET, [](AsyncWebServerRequest* req) {
+        REQUIRE_AUTH(req);
+
         JsonDocument doc;
         JsonObject net = doc["net"].to<JsonObject>();
         net["dhcp"]   = g_cfg.net.ethDhcp;
@@ -213,6 +332,7 @@ void webui_begin() {
         net["gw"]     = g_cfg.net.ethGw;
         net["ssid"]   = g_cfg.net.wifiSsid;
         net["ap"]     = g_cfg.net.apSsid;
+        net["apPassSet"] = (g_cfg.net.apPass[0] != '\0');
         net["apEn"]   = g_cfg.net.apEnabled;
         net["mbport"] = g_cfg.net.modbusPort;
         JsonObject strip = doc["strip"].to<JsonObject>();
@@ -221,7 +341,7 @@ void webui_begin() {
         strip["briMax"] = g_cfg.strip.briMax;
         strip["type"]   = g_cfg.strip.type;
         JsonArray segs = doc["segs"].to<JsonArray>();
-        for (int i = 0; i < g_cfg.numSegs; i++) {
+        for (int i = 0; i < g_cfg.numSegs && i < LED_MAX_SEGS; i++) {
             JsonObject s = segs.add<JsonObject>();
             s["s"] = g_cfg.segs[i].start;
             s["e"] = g_cfg.segs[i].end;
@@ -232,6 +352,8 @@ void webui_begin() {
 
     // GET /api/mode  POST /api/mode {"mode":0/1/2, "artnet":{"univ":0,"grp":3}}
     _srv.on("/api/mode", HTTP_GET, [](AsyncWebServerRequest* req) {
+        REQUIRE_AUTH(req);
+
         JsonDocument doc;
         doc["mode"] = g_cfg.mode;
         doc["artnet"]["univ"] = g_cfg.artnet.universe;
@@ -243,10 +365,8 @@ void webui_begin() {
         [](AsyncWebServerRequest* r){},
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t, size_t) {
-            if (g_cfg.auth.password[0] != '\0' && !req->authenticate(g_cfg.auth.username, g_cfg.auth.password)) {
-                req->send(401, "text/plain", "Unauthorized");
-                return;
-            }
+            REQUIRE_AUTH(req);
+
             JsonDocument doc;
             DeserializationError err = deserializeJson(doc, data, len);
             if (err) {
@@ -277,10 +397,8 @@ void webui_begin() {
     // OTA firmware upload: POST /update  (multipart, field "firmware")
     _srv.on("/update", HTTP_POST,
         [](AsyncWebServerRequest* req) {
-            if (g_cfg.auth.password[0] != '\0' && !req->authenticate(g_cfg.auth.username, g_cfg.auth.password)) {
-                req->send(401, "text/plain", "Unauthorized");
-                return;
-            }
+            REQUIRE_AUTH(req);
+
             bool ok = !Update.hasError();
             req->send(200, "application/json",
                       ok ? "{\"ok\":true}" : "{\"ok\":false,\"err\":\"Update failed\"}");
@@ -288,7 +406,7 @@ void webui_begin() {
         },
         [](AsyncWebServerRequest* req, String filename, size_t index, uint8_t* data,
            size_t len, bool final) {
-            if (g_cfg.auth.password[0] != '\0' && !req->authenticate(g_cfg.auth.username, g_cfg.auth.password)) {
+            if (!requestHasValidAuth(req)) {
                 return;
             }
             if (!index) {
@@ -336,7 +454,7 @@ void webui_begin() {
     _srv.on("/api/auth", HTTP_GET, [](AsyncWebServerRequest* req) {
         JsonDocument doc;
         doc["user"] = g_cfg.auth.username;
-        doc["protected"] = (g_cfg.auth.password[0] != '\0');
+        doc["protected"] = config_authConfigured();
         String out; serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
@@ -346,9 +464,9 @@ void webui_begin() {
         [](AsyncWebServerRequest* r){},
         nullptr,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t, size_t) {
-            bool isProtected = (g_cfg.auth.password[0] != '\0');
-            if (isProtected && !req->authenticate(g_cfg.auth.username, g_cfg.auth.password)) {
-                req->send(401, "text/plain", "Unauthorized");
+            bool isProtected = config_authConfigured();
+            if (isProtected && !requestHasValidAuth(req)) {
+                req->requestAuthentication();
                 return;
             }
 
@@ -371,17 +489,20 @@ void webui_begin() {
 
             if (!doc["pass"].isNull()) {
                 const char* newPass = doc["pass"].as<const char*>();
-                if (strlen(newPass) > 64) {
-                    req->send(400, "text/plain", "password length must be 0-64");
+                if (strlen(newPass) < 8 || strlen(newPass) > 64) {
+                    req->send(400, "text/plain", "password length must be 8-64");
                     return;
                 }
-                strlcpy(g_cfg.auth.password, newPass, 65);
+                config_hashPassword(newPass, g_cfg.auth.passwordHash);
+            } else if (!isProtected) {
+                req->send(400, "text/plain", "password required");
+                return;
             }
 
             config_save(true);
             req->send(200, "application/json", "{\"ok\":true}");
             Serial.printf("[WEB] Auth updated: user=%s protected=%s\n",
-                          g_cfg.auth.username, g_cfg.auth.password[0] ? "yes" : "no");
+                          g_cfg.auth.username, config_authConfigured() ? "yes" : "no");
         }
     );
 

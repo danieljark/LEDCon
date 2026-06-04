@@ -29,6 +29,16 @@ struct SegState {
     bool    en  = false;
 };
 
+enum SegPatchMask : uint8_t {
+    SEG_PATCH_R   = 1 << 0,
+    SEG_PATCH_G   = 1 << 1,
+    SEG_PATCH_B   = 1 << 2,
+    SEG_PATCH_BRI = 1 << 3,
+    SEG_PATCH_FX  = 1 << 4,
+    SEG_PATCH_EN  = 1 << 5,
+    SEG_PATCH_ALL = SEG_PATCH_R | SEG_PATCH_G | SEG_PATCH_B | SEG_PATCH_BRI | SEG_PATCH_FX | SEG_PATCH_EN
+};
+
 // Current state (main-loop only)
 extern SegState g_segs[LED_MAX_SEGS];
 extern bool     g_globalEn;
@@ -61,5 +71,7 @@ void leds_artnetPulse();
 
 // Thread-safe write from Modbus / Web task
 void leds_writeSeg(uint8_t seg, const SegState& s);
+bool leds_patchSeg(uint8_t seg, uint8_t mask, const SegState& patch);
 void leds_writeGlobal(bool en, uint8_t bri);
 SegState leds_readSeg(uint8_t seg);
+void leds_touchModbus();

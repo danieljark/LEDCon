@@ -226,6 +226,9 @@ async function doUpdate(){
   };
   xhr.onerror=()=>{msg.textContent='✗ Verbindungsfehler';};
   xhr.open('POST','/update');
+  const u=sessionStorage.getItem('authUser')||'admin';
+  const p=sessionStorage.getItem('authPass')||'';
+  if(p) xhr.setRequestHeader('Authorization','Basic '+btoa(u+':'+p));
   xhr.send(form);
 }
 </script>

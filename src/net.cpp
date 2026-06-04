@@ -18,10 +18,10 @@ static void startAP() {
         IPAddress(192,168,10,1),
         IPAddress(255,255,255,0)
     );
-    WiFi.softAP(g_cfg.net.apSsid, "");
+    WiFi.softAP(g_cfg.net.apSsid, g_cfg.net.apPass);
     _dns.start(53, "*", IPAddress(192,168,10,1));
     _apUp = true;
-    Serial.printf("[NET] AP started: SSID=%s  IP=192.168.10.1\n", g_cfg.net.apSsid);
+    Serial.printf("[NET] AP started: SSID=%s  WPA2  IP=192.168.10.1\n", g_cfg.net.apSsid);
 }
 
 static void onEthEvent(WiFiEvent_t event) {

@@ -42,6 +42,7 @@ struct NetCfg {
     char     wifiSsid[33]= "";
     char     wifiPass[65]= "";
     char     apSsid[33]  = "LEDcon";
+    char     apPass[65]  = "LEDcon-Setup";
     bool     apEnabled   = true;
     uint16_t modbusPort  = 502;
     bool     relayOn     = true;   // GPIO18 relay — enables LED strip power
@@ -54,7 +55,7 @@ struct ArtNetCfg {
 
 struct AuthCfg {
     char username[33] = "admin";
-    char password[65] = "";
+    char passwordHash[65] = "";
 };
 
 struct Config {
@@ -72,3 +73,5 @@ extern Config g_cfg;
 void config_defaults();
 bool config_load();
 bool config_save(bool force = false);
+bool config_hashPassword(const char* password, char outHash[65]);
+bool config_authConfigured();

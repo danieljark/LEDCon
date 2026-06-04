@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="720" viewBox="0 0 1120 720" role="img" aria-label="LEDCon Settings Preview">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#101415"/>
+      <stop offset="1" stop-color="#111111"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect width="1120" height="720" rx="34" fill="url(#bg)"/>
+  <circle cx="930" cy="610" r="210" fill="#4fc3f7" opacity=".07"/>
+  <circle cx="200" cy="80" r="190" fill="#d6a93a" opacity=".08"/>
+  <g filter="url(#shadow)">
+    <rect x="260" y="58" width="600" height="604" rx="24" fill="#151515" stroke="#333"/>
+    <text x="300" y="112" fill="#4fc3f7" font-family="Verdana, sans-serif" font-size="32" font-weight="700">LEDCon Einstellungen</text>
+    <text x="300" y="146" fill="#8f9aa3" font-family="Verdana, sans-serif" font-size="15">Modus · Art-Net · Admin Zugriff · Neustart</text>
+    <rect x="300" y="182" width="520" height="150" rx="16" fill="#1e1e1e" stroke="#333"/>
+    <text x="326" y="222" fill="#4fc3f7" font-family="Verdana, sans-serif" font-size="18" font-weight="700">Steuerungs-Modus</text>
+    <g font-family="Verdana, sans-serif" font-size="15">
+      <rect x="326" y="248" width="150" height="58" rx="12" fill="#202020" stroke="#333" stroke-width="2"/>
+      <text x="370" y="273" fill="#8f9aa3">Web API</text>
+      <text x="354" y="294" fill="#666" font-size="12">Alarm-Anzeige</text>
+      <rect x="486" y="248" width="150" height="58" rx="12" fill="#202020" stroke="#333" stroke-width="2"/>
+      <text x="536" y="273" fill="#8f9aa3">Art-Net</text>
+      <text x="526" y="294" fill="#666" font-size="12">DMX / RGB</text>
+      <rect x="646" y="248" width="150" height="58" rx="12" fill="#16202a" stroke="#4fc3f7" stroke-width="2"/>
+      <text x="682" y="273" fill="#4fc3f7">Modbus</text>
+      <text x="680" y="294" fill="#8f9aa3" font-size="12">Industrial</text>
+    </g>
+    <rect x="300" y="356" width="520" height="176" rx="16" fill="#1e1e1e" stroke="#333"/>
+    <text x="326" y="396" fill="#4fc3f7" font-family="Verdana, sans-serif" font-size="18" font-weight="700">Admin Zugriff</text>
+    <text x="326" y="430" fill="#8f9aa3" font-family="Verdana, sans-serif" font-size="12">Benutzer</text>
+    <rect x="326" y="442" width="468" height="34" rx="7" fill="#2a2a2a" stroke="#333"/>
+    <text x="344" y="464" fill="#eeeeee" font-family="Verdana, sans-serif" font-size="14">admin</text>
+    <text x="326" y="500" fill="#8f9aa3" font-family="Verdana, sans-serif" font-size="12">Passwort gesetzt: Ja</text>
+    <rect x="326" y="552" width="468" height="46" rx="9" fill="#4fc3f7"/>
+    <text x="492" y="582" fill="#0b0b0b" font-family="Verdana, sans-serif" font-size="16" font-weight="700">Speichern &amp; Neustart</text>
+    <text x="300" y="628" fill="#8f9aa3" font-family="Verdana, sans-serif" font-size="13">Preview der LittleFS Web UI · Admin-Passwort beim ersten Setup setzen</text>
+  </g>
+</svg>
